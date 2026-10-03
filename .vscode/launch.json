@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Macro Recorder",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/macro_recorder.py",
+      "console": "integratedTerminal"
+    }
+  ]
+}
