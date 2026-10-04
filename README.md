@@ -1,6 +1,7 @@
 # Macro Recorder
 
 Records your mouse clicks, scrolls and keystrokes on macOS, then replays them with one click.
+Saved macros live in the `macros/` folder (git-ignored). Hotkeys: F8 stop recording, F9 stop playback, F10 activate.
 
 ## Setup
 ```bash

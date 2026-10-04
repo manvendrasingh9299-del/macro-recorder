@@ -13,3 +13,6 @@ venv/
 # Your recorded macros (may contain typed text/passwords)
 macros/
 *.macro.json
+build/
+dist/
+*.spec
