@@ -1,30 +1,31 @@
 """
-Macro Recorder - records your mouse + keyboard actions and replays them.
+Macro Recorder v2 - record mouse + keyboard actions, replay them with one click.
 
-Setup (Terminal):
-    pip3 install pynput
-    python3 macro_recorder.py
+    pip install -r requirements.txt
+    python macro_recorder.py
 
-Hotkeys:
-    F8 = stop recording
-    F9 = emergency stop during playback
+Hotkeys (work from any app):  F8 stop recording   F9 stop playback   F10 activate
 """
 import json
+import queue
+import re
 import threading
 import time
-import tkinter as tk
-from tkinter import filedialog, messagebox
+from pathlib import Path
 
+import customtkinter as ctk
 from pynput import keyboard, mouse
 
-STOP_RECORD_KEY = keyboard.Key.f8
-STOP_PLAY_KEY = keyboard.Key.f9
+MACRO_DIR = Path(__file__).parent / "macros"
+MACRO_DIR.mkdir(exist_ok=True)
 
-mouse_ctl = mouse.Controller()
-kb_ctl = keyboard.Controller()
+K_STOP_REC, K_STOP_PLAY, K_PLAY = keyboard.Key.f8, keyboard.Key.f9, keyboard.Key.f10
+RED, GREEN, GREY, INK = "#D64545", "#2E9E6B", "#8A8F98", "#3B5BDB"
+COUNTDOWN = 3
+
+mouse_ctl, kb_ctl = mouse.Controller(), keyboard.Controller()
 
 
-# ---------- key (de)serialisation ----------
 def key_to_data(key):
     if isinstance(key, keyboard.KeyCode):
         return {"char": key.char} if key.char else {"vk": key.vk}
@@ -39,126 +40,218 @@ def data_to_key(d):
     return getattr(keyboard.Key, d["name"])
 
 
-class App:
-    def __init__(self, root):
-        self.root = root
-        root.title("Macro Recorder")
-        root.geometry("340x330")
-        root.resizable(False, False)
+def describe(ev):
+    """Readable text for an event, or None for events not worth listing (releases)."""
+    if ev["type"] == "click" and ev["pressed"]:
+        return f"Click {ev['button']} at ({int(ev['x'])}, {int(ev['y'])})"
+    if ev["type"] == "scroll":
+        return "Scroll " + ("down" if ev["dy"] < 0 else "up")
+    if ev["type"] == "key" and ev["pressed"]:
+        k = ev["key"]
+        return "Press " + str(k.get("char") or k.get("name") or f"key {k.get('vk')}")
+    return None
 
-        self.events = []
-        self.recording = False
-        self.playing = False
+
+class App(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        ctk.set_appearance_mode("system")
+        self.title("Macro Recorder")
+        self.geometry("440x680")
+        self.minsize(420, 640)
+
+        self.q = queue.Queue()
+        self.events, self.t0 = [], 0.0
+        self.recording = self.capturing = self.playing = False
         self.abort = threading.Event()
-        self.t0 = 0.0
         self.mouse_listener = None
 
-        tk.Label(root, text="Macro Recorder", font=("Helvetica", 18, "bold")).pack(pady=(14, 2))
-        self.status = tk.Label(root, text="Ready. Press Record.", fg="#555", wraplength=300)
-        self.status.pack(pady=4)
+        self._build()
+        self.refresh_library()
+        self.after(50, self._pump)
+        keyboard.Listener(on_press=self.on_press, on_release=self.on_release).start()
 
-        self.btn_rec = tk.Button(root, text="●  Record", width=22, command=self.start_record)
-        self.btn_rec.pack(pady=3)
-        self.btn_act = tk.Button(root, text="▶  Activate", width=22, command=self.start_play)
-        self.btn_act.pack(pady=3)
-        tk.Button(root, text="■  Stop playback (F9)", width=22, command=self.abort.set).pack(pady=3)
+    # ---------- UI ----------
+    def _build(self):
+        pad = {"padx": 24}
+        ctk.CTkLabel(self, text="Macro Recorder", font=("Helvetica Neue", 28, "bold")).pack(anchor="w", pady=(22, 0), **pad)
+        ctk.CTkLabel(self, text="Do it once. Replay it any time.", text_color=GREY).pack(anchor="w", **pad)
 
-        opts = tk.Frame(root)
-        opts.pack(pady=8)
-        tk.Label(opts, text="Repeat:").grid(row=0, column=0)
-        self.repeat = tk.Spinbox(opts, from_=1, to=999, width=5)
-        self.repeat.grid(row=0, column=1, padx=6)
-        tk.Label(opts, text="Speed:").grid(row=0, column=2)
-        self.speed = tk.Spinbox(opts, values=(0.5, 1, 1.5, 2, 3), width=5)
-        self.speed.delete(0, "end")
-        self.speed.insert(0, "1")
-        self.speed.grid(row=0, column=3, padx=6)
+        self.pill = ctk.CTkLabel(self, text="Ready", fg_color=GREY, text_color="white",
+                                 corner_radius=14, height=28, width=200)
+        self.pill.pack(anchor="w", pady=14, **pad)
 
-        files = tk.Frame(root)
-        files.pack(pady=4)
-        tk.Button(files, text="Save…", width=10, command=self.save).grid(row=0, column=0, padx=4)
-        tk.Button(files, text="Load…", width=10, command=self.load).grid(row=0, column=1, padx=4)
+        row = ctk.CTkFrame(self, fg_color="transparent")
+        row.pack(fill="x", **pad)
+        row.columnconfigure((0, 1), weight=1, uniform="a")
+        self.btn_rec = ctk.CTkButton(row, text="Record", height=56, corner_radius=12, fg_color=RED,
+                                     hover_color="#B93636", font=("Helvetica Neue", 16, "bold"),
+                                     command=self.toggle_record)
+        self.btn_rec.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+        self.btn_act = ctk.CTkButton(row, text="Activate", height=56, corner_radius=12, fg_color=GREEN,
+                                     hover_color="#237A53", font=("Helvetica Neue", 16, "bold"),
+                                     command=self.toggle_play)
+        self.btn_act.grid(row=0, column=1, sticky="ew", padx=(6, 0))
 
-        self.count = tk.Label(root, text="0 actions recorded", fg="#888")
-        self.count.pack(pady=6)
+        ctk.CTkLabel(self, text="Steps", font=("Helvetica Neue", 14, "bold")).pack(anchor="w", pady=(18, 4), **pad)
+        self.steps = ctk.CTkTextbox(self, height=190, corner_radius=10, font=("Menlo", 12), state="disabled")
+        self.steps.pack(fill="x", **pad)
+        self.log_empty()
 
-        # Global keyboard listener (hotkeys + recording keys)
-        self.kb_listener = keyboard.Listener(on_press=self.on_press, on_release=self.on_release)
-        self.kb_listener.start()
+        opts = ctk.CTkFrame(self, fg_color="transparent")
+        opts.pack(fill="x", pady=(14, 0), **pad)
+        ctk.CTkLabel(opts, text="Repeat").pack(side="left")
+        self.repeat = ctk.CTkEntry(opts, width=56, justify="center")
+        self.repeat.insert(0, "1")
+        self.repeat.pack(side="left", padx=(8, 18))
+        ctk.CTkLabel(opts, text="Speed").pack(side="left")
+        self.speed = ctk.CTkSegmentedButton(opts, values=["0.5x", "1x", "2x", "3x"], selected_color=INK)
+        self.speed.set("1x")
+        self.speed.pack(side="left", padx=8)
 
-    # ---------- helpers ----------
-    def set_status(self, text):
-        self.root.after(0, lambda: self.status.config(text=text))
+        ctk.CTkLabel(self, text="Library", font=("Helvetica Neue", 14, "bold")).pack(anchor="w", pady=(18, 4), **pad)
+        save = ctk.CTkFrame(self, fg_color="transparent")
+        save.pack(fill="x", **pad)
+        self.name = ctk.CTkEntry(save, placeholder_text="Name this macro")
+        self.name.pack(side="left", fill="x", expand=True)
+        ctk.CTkButton(save, text="Save", width=70, fg_color=INK, command=self.save).pack(side="left", padx=(8, 0))
 
-    def update_count(self):
-        self.root.after(0, lambda: self.count.config(text=f"{len(self.events)} actions recorded"))
+        lib = ctk.CTkFrame(self, fg_color="transparent")
+        lib.pack(fill="x", pady=(8, 0), **pad)
+        self.menu = ctk.CTkOptionMenu(lib, values=["No saved macros"], command=self.load_named)
+        self.menu.pack(side="left", fill="x", expand=True)
+        ctk.CTkButton(lib, text="Delete", width=70, fg_color="transparent", border_width=1,
+                      text_color=("gray20", "gray80"), command=self.delete).pack(side="left", padx=(8, 0))
 
-    def add(self, **ev):
-        ev["t"] = time.time() - self.t0
-        self.events.append(ev)
-        self.update_count()
+        ctk.CTkLabel(self, text="F8 stops recording   F9 stops playback   F10 activates",
+                     text_color=GREY, font=("Helvetica Neue", 12)).pack(side="bottom", pady=14)
+
+    def ui(self, fn, *args):
+        self.q.put(lambda: fn(*args))
+
+    def _pump(self):
+        try:
+            while True:
+                self.q.get_nowait()()
+        except queue.Empty:
+            pass
+        self.after(50, self._pump)
+
+    def set_state(self, color, text):
+        self.pill.configure(fg_color=color, text=text)
+
+    def refresh_buttons(self):
+        self.btn_rec.configure(text="Stop (F8)" if self.recording else "Record",
+                               state="disabled" if self.playing else "normal")
+        self.btn_act.configure(text="Stop (F9)" if self.playing else "Activate",
+                               state="disabled" if self.recording else "normal")
+
+    def log(self, text):
+        self.steps.configure(state="normal")
+        self.steps.insert("end", text + "\n")
+        self.steps.see("end")
+        self.steps.configure(state="disabled")
+
+    def log_clear(self):
+        self.steps.configure(state="normal")
+        self.steps.delete("1.0", "end")
+        self.steps.configure(state="disabled")
+
+    def log_empty(self):
+        self.log("Nothing recorded yet. Press Record, then do the steps you want to repeat.")
+
+    def show_events(self):
+        self.log_clear()
+        lines = [f"{e['t']:5.1f}s  {d}" for e in self.events if (d := describe(e))]
+        if lines:
+            for line in lines:
+                self.log(line)
+        else:
+            self.log_empty()
 
     # ---------- recording ----------
+    def toggle_record(self):
+        self.stop_record() if self.recording else self.start_record()
+
     def start_record(self):
         if self.recording or self.playing:
             return
-        self.events = []
-        self.update_count()
-        self.status.config(text="Starting in 3 seconds… window will minimise.\nPress F8 to stop.")
-        self.root.after(1000, self.root.iconify)
-        self.root.after(3000, self._begin_record)
+        self.recording, self.events = True, []
+        self.log_clear()
+        self.set_state(RED, f"Recording starts in {COUNTDOWN}s")
+        self.refresh_buttons()
+        self.after(800, self.iconify)
+        self.after(COUNTDOWN * 1000, self._begin_record)
 
     def _begin_record(self):
+        if not self.recording:
+            return
         self.t0 = time.time()
-        self.recording = True
+        self.capturing = True
+        self.set_state(RED, "Recording")
         self.mouse_listener = mouse.Listener(on_click=self.on_click, on_scroll=self.on_scroll)
         self.mouse_listener.start()
 
     def stop_record(self):
-        self.recording = False
+        if not self.recording:
+            return
+        self.recording = self.capturing = False
         if self.mouse_listener:
             self.mouse_listener.stop()
-        self.root.after(0, self.root.deiconify)
-        self.set_status(f"Recorded {len(self.events)} actions. Press Activate to replay.")
+        self.deiconify()
+        self.lift()
+        self.show_events()
+        self.set_state(GREY, f"Recorded {sum(1 for e in self.events if describe(e))} steps")
+        self.refresh_buttons()
+
+    def add(self, **ev):
+        ev["t"] = round(time.time() - self.t0, 3)
+        self.events.append(ev)
+        if d := describe(ev):
+            self.ui(self.log, f"{ev['t']:5.1f}s  {d}")
 
     def on_click(self, x, y, button, pressed):
-        if self.recording:
+        if self.capturing:
             self.add(type="click", x=x, y=y, button=button.name, pressed=pressed)
 
     def on_scroll(self, x, y, dx, dy):
-        if self.recording:
+        if self.capturing:
             self.add(type="scroll", x=x, y=y, dx=dx, dy=dy)
 
     def on_press(self, key):
-        if key == STOP_PLAY_KEY:
+        if key == K_STOP_PLAY:
             self.abort.set()
-            return
-        if key == STOP_RECORD_KEY and self.recording:
-            self.stop_record()
-            return
-        if self.recording:
+        elif key == K_STOP_REC and self.recording:
+            self.ui(self.stop_record)
+        elif key == K_PLAY and not self.recording:
+            self.ui(self.toggle_play)
+        elif self.capturing:
             self.add(type="key", pressed=True, key=key_to_data(key))
 
     def on_release(self, key):
-        if self.recording and key not in (STOP_RECORD_KEY, STOP_PLAY_KEY):
+        if self.capturing and key not in (K_STOP_REC, K_STOP_PLAY, K_PLAY):
             self.add(type="key", pressed=False, key=key_to_data(key))
 
     # ---------- playback ----------
+    def toggle_play(self):
+        self.abort.set() if self.playing else self.start_play()
+
     def start_play(self):
         if self.recording or self.playing:
             return
         if not self.events:
-            messagebox.showinfo("Nothing to play", "Record or load a macro first.")
+            self.set_state(GREY, "Record or load a macro first")
             return
         try:
             repeat = max(1, int(self.repeat.get()))
-            speed = max(0.1, float(self.speed.get()))
         except ValueError:
-            repeat, speed = 1, 1.0
-        self.abort.clear()
+            repeat = 1
+        speed = float(self.speed.get().rstrip("x"))
         self.playing = True
-        self.status.config(text="Starting in 3 seconds… switch to your starting screen.\nF9 = stop.")
-        self.root.after(1000, self.root.iconify)
+        self.abort.clear()
+        self.set_state(GREEN, f"Starting in {COUNTDOWN}s")
+        self.refresh_buttons()
+        self.after(800, self.iconify)
         threading.Thread(target=self._play, args=(repeat, speed), daemon=True).start()
 
     def _sleep(self, seconds):
@@ -166,25 +259,26 @@ class App:
         while time.time() < end:
             if self.abort.is_set():
                 return False
-            time.sleep(min(0.02, max(0, end - time.time())))
+            time.sleep(0.02)
         return True
 
     def _play(self, repeat, speed):
-        if not self._sleep(3):
-            return self._end_play("Stopped.")
+        if not self._sleep(COUNTDOWN):
+            return self.ui(self._end_play, "Stopped")
         for n in range(repeat):
+            self.ui(self.set_state, GREEN, f"Playing  run {n + 1} of {repeat}")
             prev = 0.0
             for ev in self.events:
                 if not self._sleep((ev["t"] - prev) / speed):
-                    return self._end_play("Stopped.")
+                    return self.ui(self._end_play, "Stopped")
                 prev = ev["t"]
                 self._do(ev)
-            self.set_status(f"Run {n + 1}/{repeat} done")
             if n < repeat - 1 and not self._sleep(1):
-                return self._end_play("Stopped.")
-        self._end_play("Finished.")
+                return self.ui(self._end_play, "Stopped")
+        self.ui(self._end_play, "Finished")
 
-    def _do(self, ev):
+    @staticmethod
+    def _do(ev):
         try:
             if ev["type"] == "click":
                 mouse_ctl.position = (ev["x"], ev["y"])
@@ -196,34 +290,49 @@ class App:
             elif ev["type"] == "key":
                 k = data_to_key(ev["key"])
                 (kb_ctl.press if ev["pressed"] else kb_ctl.release)(k)
-        except Exception as e:  # keep going if one action fails
-            print("Action failed:", e)
+        except Exception as exc:  # one failed action shouldn't end the run
+            print("Action failed:", exc)
 
     def _end_play(self, msg):
         self.playing = False
-        self.set_status(msg)
-        self.root.after(0, self.root.deiconify)
+        self.deiconify()
+        self.lift()
+        self.set_state(GREY, msg)
+        self.refresh_buttons()
 
-    # ---------- save / load ----------
+    # ---------- library ----------
+    def names(self):
+        return sorted(p.stem for p in MACRO_DIR.glob("*.json"))
+
+    def refresh_library(self, select=None):
+        names = self.names()
+        self.menu.configure(values=names or ["No saved macros"])
+        self.menu.set(select or (names[0] if names else "No saved macros"))
+
     def save(self):
         if not self.events:
+            self.set_state(GREY, "Nothing to save yet")
             return
-        path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("Macro", "*.json")])
-        if path:
-            with open(path, "w") as f:
-                json.dump(self.events, f)
-            self.status.config(text="Saved.")
+        name = re.sub(r"[^\w\- ]", "", self.name.get()).strip() or time.strftime("macro-%H%M%S")
+        (MACRO_DIR / f"{name}.json").write_text(json.dumps(self.events))
+        self.refresh_library(select=name)
+        self.name.delete(0, "end")
+        self.set_state(GREY, f"Saved {name}")
 
-    def load(self):
-        path = filedialog.askopenfilename(filetypes=[("Macro", "*.json")])
-        if path:
-            with open(path) as f:
-                self.events = json.load(f)
-            self.update_count()
-            self.status.config(text="Loaded. Press Activate.")
+    def load_named(self, name):
+        path = MACRO_DIR / f"{name}.json"
+        if path.exists():
+            self.events = json.loads(path.read_text())
+            self.show_events()
+            self.set_state(GREY, f"Loaded {name}")
+
+    def delete(self):
+        path = MACRO_DIR / f"{self.menu.get()}.json"
+        if path.exists():
+            path.unlink()
+            self.refresh_library()
+            self.set_state(GREY, "Deleted")
 
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    App(root)
-    root.mainloop()
+    App().mainloop()
