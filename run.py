@@ -205,6 +205,63 @@ def settings_menu(self):
 for fn in (_begin_record, _watch, grab_crop, on_click, find, _play, _do, save_strict, settings_menu):
     setattr(App, fn.__name__, fn)
 
+# ---------- double-click support ----------
+def on_click(self, x, y, button, pressed):
+    if not self.capturing:
+        return
+    now = time.time()
+    if not self.events:
+        self.rec_last, self.cur_n = (0.0, (0, 0), 1), 1
+    ev = {"type": "click", "x": x, "y": y, "button": button.name, "pressed": pressed,
+          "t": round(now - self.t0, 3)}
+    if pressed:
+        lt, lp, ln = self.rec_last
+        near = abs(x - lp[0]) < 8 and abs(y - lp[1]) < 8
+        self.cur_n = ln + 1 if now - lt < 0.5 and near else 1
+        self.rec_last = (now, (x, y), self.cur_n)
+        if self.cur_n == 1:  # repeat clicks reuse the first click's target
+            ev.update(self.grab_crop(x, y, now))
+    ev["n"] = self.cur_n
+    self.events.append(ev)
+    self.ui(self.update_count)
+
+
+def _do(self, ev):
+    try:
+        if ev["type"] == "click":
+            n = ev.get("n", 1)
+            if ev["pressed"] and n == 1:
+                self.cur = (ev["x"], ev["y"])
+                if self.brain != "exact" and ev.get("crop"):
+                    self.ui(self.set_status, ACCENT, "Finding target")
+                    hit = self.find(ev)
+                    print(f"[find] recorded=({ev['x']:.0f},{ev['y']:.0f}) found={hit}")
+                    if hit:
+                        self.cur = hit
+                    elif self.abort.is_set():
+                        return
+                    elif self.strict_var.get():
+                        self.fail = "Target not found. Stopped"
+                        self.abort.set()
+                        return
+                    else:
+                        self.ui(self.set_status, ACCENT, "Not found, using saved spot")
+                move_to(*self.cur)
+            down, up, btn = BTN.get(ev["button"], BTN["left"])
+            post_mouse(down if ev["pressed"] else up, *self.cur, btn, n)
+            print(f"[click x{n}] {ev['button']} {'down' if ev['pressed'] else 'up'} at ({self.cur[0]:.0f}, {self.cur[1]:.0f})")
+        elif ev["type"] == "scroll":
+            move_to(ev["x"], ev["y"])
+            mouse_ctl.scroll(ev["dx"], ev["dy"])
+        elif ev["type"] == "key":
+            (kb_ctl.press if ev["pressed"] else kb_ctl.release)(data_to_key(ev["key"]))
+    except Exception as exc:
+        print("Action failed:", exc)
+
+
+App.on_click = on_click
+App._do = _do
+
 if __name__ == "__main__":
     app = App()
     app.strict_var = tk.BooleanVar(value=app.cfg.get("strict", False))
