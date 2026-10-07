@@ -523,6 +523,191 @@ def make_fast(self):
 for fn in (get_tpl, match_fast, find, _play, _do, ask_fast, make_fast):
     setattr(App, fn.__name__, fn)
     
+    # ---------- Learn from my day (keep ABOVE: if __name__ == "__main__":) ----------
+import datetime
+from tkinter import messagebox
+from pynput import keyboard, mouse
+from AppKit import NSWorkspace
+
+LEARN_DIR = mr.APP_DIR / "learn"
+LEARN_CAP_GB = 3.0
+SKIP_APPS = ("1password", "bitwarden", "keychain", "passwords", "lastpass", "dashlane",
+             "python", "macro recorder")
+
+
+def front_app():
+    try:
+        return NSWorkspace.sharedWorkspace().frontmostApplication().localizedName() or ""
+    except Exception:
+        return ""
+
+
+def learn_stats():
+    n, size = 0, 0
+    if LEARN_DIR.exists():
+        for f in LEARN_DIR.rglob("*"):
+            if f.is_file():
+                size += f.stat().st_size
+                if f.name == "data.jsonl":
+                    n += sum(1 for _ in open(f))
+    return n, size / 1e9
+
+
+def learn_on(self):
+    if getattr(self, "learning", False):
+        return
+    LEARN_DIR.mkdir(parents=True, exist_ok=True)
+    self.learning, self.l_paused, self.l_move, self.l_saved = True, False, 0.0, 0
+    self.l_frames, self.l_last = deque(maxlen=3), (0.0, (0, 0), 1)
+    threading.Thread(target=self._learn_watch, daemon=True).start()
+    self.l_mouse = mouse.Listener(on_click=self._learn_click, on_move=self._learn_moved)
+    self.l_mouse.start()
+    self.l_keys = keyboard.Listener(on_press=self._learn_key)
+    self.l_keys.start()
+    self.title("Macro Recorder  ● LEARNING")
+    self.set_status(GREY, "Learning on. Fn+F7 pauses")
+
+
+def learn_off(self):
+    self.learning = False
+    for l in (getattr(self, "l_mouse", None), getattr(self, "l_keys", None)):
+        if l:
+            l.stop()
+    self.title("Macro Recorder")
+    self.set_status(GREY, "Learning off")
+
+
+def _learn_key(self, key):
+    if key == keyboard.Key.f7:  # Fn+F7 on a MacBook
+        self.l_paused = not self.l_paused
+        self.ui(self.title, "Macro Recorder  ● LEARNING" + ("  (paused)" if self.l_paused else ""))
+        self.ui(self.set_status, GREY, "Learning paused" if self.l_paused else "Learning resumed")
+
+
+def _learn_moved(self, x, y):
+    self.l_move = time.time()
+
+
+def _learn_watch(self):
+    """Keep the last few screenshots, but only while you are actually using the mouse."""
+    while self.learning:
+        if not self.l_paused and not self.playing and time.time() - self.l_move < 3:
+            try:
+                self.l_frames.append((time.time(), grab_screen()))
+            except Exception:
+                pass
+        time.sleep(0.3)
+
+
+def _learn_click(self, x, y, button, pressed):
+    if not pressed or self.l_paused or self.playing:
+        return
+    now = time.time()
+    app = front_app()
+    if any(s in app.lower() for s in SKIP_APPS):
+        return
+    lt, lp, ln = self.l_last
+    near = abs(x - lp[0]) < 8 and abs(y - lp[1]) < 8
+    n = ln + 1 if now - lt < 0.5 and near else 1
+    self.l_last = (now, (x, y), n)
+    old = [f for f in self.l_frames if f[0] <= now - 0.08]
+    before = old[-1][1] if old and now - old[-1][0] < 2 else None
+    threading.Thread(target=self._learn_save, args=(now, x, y, button.name, n, app, before),
+                     daemon=True).start()
+
+
+def _learn_save(self, t, x, y, btn, n, app, before):
+    try:
+        day = LEARN_DIR / datetime.date.today().isoformat()
+        day.mkdir(parents=True, exist_ok=True)
+        sid = str(int(t * 1000))
+        shot = before or grab_screen()
+        time.sleep(0.8)  # let the screen react, then save what the click did
+        after = grab_screen()
+        shot.resize((1024, round(shot.height * 1024 / shot.width))).save(day / f"{sid}.jpg", quality=70)
+        after.resize((512, round(after.height * 512 / after.width))).save(day / f"{sid}-after.jpg", quality=60)
+        s = shot.width / self.sw
+        half = int(CROP_PT * s / 2)
+        cx, cy = int(x * s), int(y * s)
+        shot.crop((max(cx - half, 0), max(cy - half, 0), cx + half, cy + half)).save(day / f"{sid}-crop.png")
+        row = {"id": sid, "time": datetime.datetime.fromtimestamp(t).isoformat(timespec="seconds"),
+               "app": app, "screen": [self.sw, self.sh], "click": [round(x, 1), round(y, 1)],
+               "norm": [round(x / self.sw, 4), round(y / self.sh, 4)], "button": btn, "n": n,
+               "image": f"{sid}.jpg", "crop": f"{sid}-crop.png", "after": f"{sid}-after.jpg"}
+        with open(day / "data.jsonl", "a") as f:
+            f.write(json.dumps(row) + "\n")
+        self.l_saved += 1
+        if self.l_saved % 50 == 0 and learn_stats()[1] > LEARN_CAP_GB:
+            days = sorted(p for p in LEARN_DIR.iterdir() if p.is_dir())
+            if len(days) > 1:
+                shutil.rmtree(days[0])
+    except Exception as exc:
+        print("Learn error:", exc)
+
+
+def toggle_learn(self):
+    if self.learn_var.get():
+        if not self.cfg.get("learn_ok"):
+            ok = messagebox.askokcancel(
+                "Learn from my day",
+                "While this is on, the app saves a screenshot, a small picture of what you click, "
+                "and the click position, on THIS Mac only.\n\n"
+                "It does NOT save what you type, and it skips password managers.\n"
+                "Screenshots can still show private content. Press Fn+F7 to pause any time.\n\n"
+                "Turn it on?", parent=self)
+            if not ok:
+                self.learn_var.set(False)
+                return
+            self.cfg["learn_ok"] = True
+        self.learn_on()
+    else:
+        self.learn_off()
+    self.cfg["learn"] = bool(self.learn_var.get())
+    save_cfg(self.cfg)
+
+
+def delete_learned(self):
+    if messagebox.askyesno("Delete learned data", "Delete ALL saved screenshots and click data?", parent=self):
+        shutil.rmtree(LEARN_DIR, ignore_errors=True)
+        self.set_status(GREY, "Learned data deleted")
+
+
+def settings_menu(self):
+    if not hasattr(self, "learn_var"):
+        self.learn_var = tk.BooleanVar(value=getattr(self, "learning", False))
+    n, gb = learn_stats()
+    m = tk.Menu(self, tearoff=0)
+    m.add_command(label="Anthropic API key…", command=self.ask_key)
+    m.add_command(label="Ollama model…", command=self.ask_model)
+    m.add_checkbutton(label="Stop if target not found", variable=self.strict_var, command=self.save_strict)
+    m.add_separator()
+    m.add_checkbutton(label="Learn from my day", variable=self.learn_var, command=self.toggle_learn)
+    m.add_command(label=f"{n} examples, {gb:.2f} GB saved", state="disabled")
+    m.add_command(label="Open learned data", command=lambda: (LEARN_DIR.mkdir(parents=True, exist_ok=True),
+                                                              subprocess.run(["open", str(LEARN_DIR)])))
+    m.add_command(label="Delete learned data…", command=self.delete_learned)
+    m.add_separator()
+    m.add_command(label="Open app folder", command=self.open_folder)
+    m.add_command(label="Fn+F7 pause learning   Fn+F8 stop rec   Fn+F10 run", state="disabled")
+    m.tk_popup(self.winfo_pointerx(), self.winfo_pointery())
+
+
+_orig_init = App.__init__
+
+
+def _init(self, *a, **k):
+    _orig_init(self, *a, **k)
+    self.learn_var = tk.BooleanVar(value=False)
+    if self.cfg.get("learn") and self.cfg.get("learn_ok"):
+        self.learn_var.set(True)
+        self.after(1000, self.learn_on)
+
+
+for fn in (learn_on, learn_off, _learn_key, _learn_moved, _learn_watch, _learn_click, _learn_save,
+           toggle_learn, delete_learned, settings_menu):
+    setattr(App, fn.__name__, fn)
+App.__init__ = _init
+
 if __name__ == "__main__":
     app = App()
     app.strict_var = tk.BooleanVar(value=app.cfg.get("strict", False))
