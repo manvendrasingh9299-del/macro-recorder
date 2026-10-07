@@ -6,10 +6,7 @@ Saved macros live in the `macros/` folder (git-ignored). Hotkeys: F8 stop record
 ## Setup
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python macro_recorder.py
-```
+
 
 ## macOS permissions
 System Settings → Privacy & Security → enable **Accessibility** and **Input Monitoring**
