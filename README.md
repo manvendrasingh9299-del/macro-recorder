@@ -6,7 +6,10 @@ Saved macros live in the `macros/` folder (git-ignored). Hotkeys: F8 stop record
 ## Setup
 ```bash
 python3 -m venv .venv
-
+source .venv/bin/activate
+pip install -r requirements.txt
+python macro_recorder.py
+```
 
 ## macOS permissions
 System Settings → Privacy & Security → enable **Accessibility** and **Input Monitoring**
@@ -19,4 +22,4 @@ for the app you run it from (Terminal or Visual Studio Code). Restart that app a
 - **Save / Load** → keep macros as JSON files
 
 ## Warning
-Macros record everything you type, including passwords. Never commit macro files to GitHub.
+Macros record everything you type, including passwords.
