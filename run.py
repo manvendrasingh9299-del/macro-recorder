@@ -262,6 +262,92 @@ def _do(self, ev):
 App.on_click = on_click
 App._do = _do
 
+# ---------- reliable clicks (keep this ABOVE: if __name__ == "__main__":) ----------
+from Quartz import (CGEventSourceCreate, kCGEventSourceStateHIDSystemState,
+                    CGEventCreateMouseEvent as _mk, CGEventPost as _post,
+                    CGEventSetIntegerValueField as _setf, kCGMouseEventClickState as _CS,
+                    kCGEventMouseMoved as _MV, kCGHIDEventTap as _TAP)
+
+_SRC = CGEventSourceCreate(kCGEventSourceStateHIDSystemState)
+
+
+def _send(kind, x, y, btn=0, n=1):
+    e = _mk(_SRC, kind, (x, y), btn)
+    _setf(e, _CS, n)
+    _post(_TAP, e)
+
+
+def glide_to(x, y):
+    """Move in small steps, then pause, so the Dock and menus notice the pointer."""
+    sx, sy = mouse_ctl.position
+    for i in range(1, 7):
+        _send(_MV, sx + (x - sx) * i / 6, sy + (y - sy) * i / 6)
+        time.sleep(0.015)
+    _send(_MV, x, y)
+    time.sleep(0.25)
+
+
+def on_click(self, x, y, button, pressed):
+    if not self.capturing:
+        return
+    try:
+        now = time.time()
+        if not self.events:
+            self.rec_last, self.cur_n = (0.0, (0, 0), 0), 1
+        lt, lp, ln = getattr(self, "rec_last", (0.0, (0, 0), 0))
+        ev = {"type": "click", "x": x, "y": y, "button": button.name, "pressed": pressed,
+              "t": round(now - self.t0, 3)}
+        if pressed:
+            near = abs(x - lp[0]) < 8 and abs(y - lp[1]) < 8
+            n = ln + 1 if now - lt < 0.5 and near else 1
+            self.rec_last, self.cur_n = (now, (x, y), n), n
+            if n == 1:  # repeat clicks reuse the first click's target
+                ev.update(self.grab_crop(x, y, now))
+        ev["n"] = getattr(self, "cur_n", 1)
+        self.events.append(ev)
+        self.ui(self.update_count)
+    except Exception as exc:
+        print("Record error:", exc)
+
+
+def _do(self, ev):
+    try:
+        if ev["type"] == "click":
+            n = ev.get("n", 1)
+            if ev["pressed"] and n == 1:
+                self.cur = (ev["x"], ev["y"])
+                if self.brain != "exact" and ev.get("crop"):
+                    self.ui(self.set_status, ACCENT, "Finding target")
+                    hit = self.find(ev)
+                    print(f"[find] recorded=({ev['x']:.0f},{ev['y']:.0f}) found={hit}")
+                    if hit:
+                        self.cur = hit
+                    elif self.abort.is_set():
+                        return
+                    elif self.strict_var.get():
+                        self.fail = "Target not found. Stopped"
+                        self.abort.set()
+                        return
+                    else:
+                        self.ui(self.set_status, ACCENT, "Not found, using saved spot")
+                glide_to(*self.cur)
+            down, up, btn = BTN.get(ev["button"], BTN["left"])
+            if not ev["pressed"]:
+                time.sleep(0.05)  # hold the button long enough to count as a click
+            _send(down if ev["pressed"] else up, self.cur[0], self.cur[1], btn, n)
+            print(f"[click x{n}] {ev['button']} {'down' if ev['pressed'] else 'up'} at ({self.cur[0]:.0f}, {self.cur[1]:.0f})")
+        elif ev["type"] == "scroll":
+            glide_to(ev["x"], ev["y"])
+            mouse_ctl.scroll(ev["dx"], ev["dy"])
+        elif ev["type"] == "key":
+            (kb_ctl.press if ev["pressed"] else kb_ctl.release)(data_to_key(ev["key"]))
+    except Exception as exc:
+        print("Action failed:", exc)
+
+
+App.on_click = on_click
+App._do = _do
+
 if __name__ == "__main__":
     app = App()
     app.strict_var = tk.BooleanVar(value=app.cfg.get("strict", False))
