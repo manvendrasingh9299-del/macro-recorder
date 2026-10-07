@@ -348,6 +348,181 @@ def _do(self, ev):
 App.on_click = on_click
 App._do = _do
 
+# ---------- learn once, then run fast (keep this ABOVE: if __name__ == "__main__":) ----------
+import base64
+import cv2
+from tkinter import messagebox
+
+
+def glide_to(x, y, fast=False):
+    """Move in small steps, then pause, so the Dock and menus notice the pointer."""
+    sx, sy = mouse_ctl.position
+    steps = 3 if fast else 6
+    for i in range(1, steps + 1):
+        _send(_MV, sx + (x - sx) * i / steps, sy + (y - sy) * i / steps)
+        time.sleep(0.015)
+    _send(_MV, x, y)
+    time.sleep(0.12 if fast else 0.25)
+
+
+def fast_delay(ev, gap):
+    """How long the fast version waits before this step."""
+    if ev["type"] == "click":
+        if ev["pressed"] and ev.get("n", 1) == 1:
+            return 0.12        # the click then waits for its target to appear
+        return min(gap, 0.06)
+    if ev["type"] == "key":
+        return min(gap, 0.04) if gap < 0.3 else min(gap, 1.0)
+    return min(gap, 0.1)       # scroll
+
+
+def get_tpl(self, ev, shot_w):
+    cache = self.__dict__.setdefault("tpl_cache", {})
+    key = (hash(ev["crop"]), "s" in ev, shot_w)
+    t = cache.get(key)
+    if t is None:
+        t = cv2.imdecode(np.frombuffer(base64.b64decode(ev["crop"]), np.uint8), cv2.IMREAD_GRAYSCALE)
+        if "s" not in ev:
+            k = shot_w / self.sent_w
+            t = cv2.resize(t, None, fx=k, fy=k)
+        cache[key] = t
+    return t
+
+
+def match_fast(self, ev, shot):
+    """Look only near where the target was last found. Much quicker than the whole screen."""
+    tpl = self.get_tpl(ev, shot.width)
+    th, tw = tpl.shape[:2]
+    s = shot.width / self.sw
+    ox, oy = ev.get("ox", tw / 2), ev.get("oy", th / 2)
+    fx, fy = ev.get("fx", ev["x"]), ev.get("fy", ev["y"])
+    pad = int(260 * s)
+    tlx, tly = int(fx * s - ox), int(fy * s - oy)
+    x0, y0 = max(tlx - pad, 0), max(tly - pad, 0)
+    x1, y1 = min(tlx + tw + pad, shot.width), min(tly + th + pad, shot.height)
+    if x1 - x0 < tw or y1 - y0 < th:
+        return None
+    reg = cv2.cvtColor(np.array(shot.crop((x0, y0, x1, y1))), cv2.COLOR_RGB2GRAY)
+    _, score, _, loc = cv2.minMaxLoc(cv2.matchTemplate(reg, tpl, cv2.TM_CCOEFF_NORMED))
+    if score < mr.MATCH_MIN:
+        return None
+    return (x0 + loc[0] + ox) / s, (y0 + loc[1] + oy) / s
+
+
+def find(self, ev):
+    fast = "fd" in ev
+    end, tries = time.time() + WAIT_S, 0
+    while time.time() < end and not self.abort.is_set():
+        try:
+            shot = grab_screen()
+            hit = (self.match_fast(ev, shot) if fast else None) or self.match_local(ev, shot)
+            if hit:
+                return hit
+            if self.brain in ("claude", "ollama", "plugin") and tries < 2:
+                tries += 1
+                hit = self.model_find(ev, shot, shot.width / self.sw)
+                if hit:
+                    return hit
+        except Exception as exc:
+            print("Find error:", exc)
+        if not self._sleep(0.15 if fast else 0.5):
+            return None
+    return None
+
+
+def _play(self, repeat, speed):
+    fast_macro = bool(self.events) and "fd" in self.events[0]
+    self.learned = {}
+    if self.brain == "ollama":
+        self.ui(self.set_status, ACCENT, "Starting Ollama")
+        problem = ensure_ollama(self.cfg.get("ollama_model", OLLAMA_DEFAULT))
+        if problem:
+            self.ui(self.set_status, ACCENT, problem)
+    if not self._sleep(1 if fast_macro else COUNTDOWN):
+        return self._stopped()
+    for n in range(repeat):
+        self.ui(self.set_status, GREEN, f"Playing {n + 1} of {repeat}" + (" FAST" if fast_macro else ""))
+        prev = 0.0
+        for i, ev in enumerate(self.events):
+            gap = ev["fd"] if "fd" in ev else ev["t"] - prev
+            if not self._sleep(gap / speed):
+                return self._stopped()
+            prev = ev["t"]
+            self.idx = i
+            self._do(ev)
+        if n < repeat - 1 and not self._sleep(0.3 if fast_macro else 1):
+            return self._stopped()
+    self.ui(self._end, "Finished")
+    if not fast_macro and self.learned and self.brain != "exact":
+        self.ui(self.ask_fast)
+
+
+def _do(self, ev):
+    try:
+        if ev["type"] == "click":
+            n, fast = ev.get("n", 1), "fd" in ev
+            if ev["pressed"] and n == 1:
+                self.cur = (ev.get("fx", ev["x"]), ev.get("fy", ev["y"]))
+                if self.brain != "exact" and ev.get("crop"):
+                    self.ui(self.set_status, ACCENT, "Finding target")
+                    hit = self.find(ev)
+                    print(f"[find] saved=({self.cur[0]:.0f},{self.cur[1]:.0f}) found={hit}")
+                    if hit:
+                        self.cur = hit
+                        self.learned[self.idx] = hit
+                    elif self.abort.is_set():
+                        return
+                    elif self.strict_var.get():
+                        self.fail = "Target not found. Stopped"
+                        self.abort.set()
+                        return
+                    else:
+                        self.ui(self.set_status, ACCENT, "Not found, using saved spot")
+                glide_to(*self.cur, fast=fast)
+            down, up, btn = BTN.get(ev["button"], BTN["left"])
+            if not ev["pressed"]:
+                time.sleep(0.05)  # hold the button long enough to count as a click
+            _send(down if ev["pressed"] else up, self.cur[0], self.cur[1], btn, n)
+            print(f"[click x{n}] {ev['button']} {'down' if ev['pressed'] else 'up'} at ({self.cur[0]:.0f}, {self.cur[1]:.0f})")
+        elif ev["type"] == "scroll":
+            glide_to(ev["x"], ev["y"], fast="fd" in ev)
+            mouse_ctl.scroll(ev["dx"], ev["dy"])
+        elif ev["type"] == "key":
+            (kb_ctl.press if ev["pressed"] else kb_ctl.release)(data_to_key(ev["key"]))
+    except Exception as exc:
+        print("Action failed:", exc)
+
+
+def ask_fast(self):
+    if messagebox.askyesno(
+            "Was it right?",
+            "Did the macro do the task correctly?\n\n"
+            "YES  = save a FAST version (next runs skip the waiting)\n"
+            "NO   = keep the macro as it is",
+            parent=self):
+        self.make_fast()
+
+
+def make_fast(self):
+    prev = 0.0
+    for i, ev in enumerate(self.events):
+        gap = max(0.0, ev["t"] - prev)
+        prev = ev["t"]
+        if i in self.learned:
+            ev["fx"], ev["fy"] = self.learned[i]
+        ev["fd"] = fast_delay(ev, gap)
+    path = mr.MACRO_DIR / f"{self.macro_name}.json"
+    if path.exists():
+        path.write_text(json.dumps(self.events))
+        self.set_status(GREY, "Saved as FAST macro")
+    else:
+        self.set_status(GREY, "Name it to keep the FAST macro")
+        self.save()
+
+
+for fn in (get_tpl, match_fast, find, _play, _do, ask_fast, make_fast):
+    setattr(App, fn.__name__, fn)
+    
 if __name__ == "__main__":
     app = App()
     app.strict_var = tk.BooleanVar(value=app.cfg.get("strict", False))
