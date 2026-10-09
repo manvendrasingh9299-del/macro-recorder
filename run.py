@@ -127,7 +127,25 @@ def find(self, ev):
     return None
 
 
-
+def _play(self, repeat, speed):
+    if self.brain == "ollama":
+        self.ui(self.set_status, ACCENT, "Starting Ollama")
+        problem = ensure_ollama(self.cfg.get("ollama_model", OLLAMA_DEFAULT))
+        if problem:
+            self.ui(self.set_status, ACCENT, problem)
+    if not self._sleep(COUNTDOWN):
+        return self._stopped()
+    for n in range(repeat):
+        self.ui(self.set_status, GREEN, f"Playing {n + 1} of {repeat}")
+        prev = 0.0
+        for ev in self.events:
+            if not self._sleep((ev["t"] - prev) / speed):
+                return self._stopped()
+            prev = ev["t"]
+            self._do(ev)
+        if n < repeat - 1 and not self._sleep(1):
+            return self._stopped()
+    self.ui(self._end, "Finished")
 
 
 def _do(self, ev):
@@ -1195,9 +1213,11 @@ def open_library(self):
     box = ctk.CTkScrollableFrame(win, fg_color=LAV, corner_radius=18)
     box.pack(fill="both", expand=True, padx=16, pady=(0, 16))
     if not names:
-        ctk.CTkLabel(box, text="nothing saved yet.\ntap the macro
-                     
-if __name__ == "__main__":
-    app = App()
-    app.strict_var = tk.BooleanVar(value=app.cfg.get("strict", False))
-    app.mainloop()
+        ctk.CTkLabel(box, text="nothing saved yet.\ntap the macro").pack(pady=16)
+    for name in names:
+        ctk.CTkButton(box, text=name, command=lambda n=name: self.load_macro(n)).pack(fill="x", pady=4)
+        
+    if __name__ == "__main__":
+        app = App()
+        app.strict_var = tk.BooleanVar(value=app.cfg.get("strict", False))
+        app.mainloop()
