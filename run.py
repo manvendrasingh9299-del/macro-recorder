@@ -127,25 +127,7 @@ def find(self, ev):
     return None
 
 
-def _play(self, repeat, speed):
-    if self.brain == "ollama":
-        self.ui(self.set_status, ACCENT, "Starting Ollama")
-        problem = ensure_ollama(self.cfg.get("ollama_model", OLLAMA_DEFAULT))
-        if problem:
-            self.ui(self.set_status, ACCENT, problem)
-    if not self._sleep(COUNTDOWN):
-        return self._stopped()
-    for n in range(repeat):
-        self.ui(self.set_status, GREEN, f"Playing {n + 1} of {repeat}")
-        prev = 0.0
-        for ev in self.events:
-            if not self._sleep((ev["t"] - prev) / speed):
-                return self._stopped()
-            prev = ev["t"]
-            self._do(ev)
-        if n < repeat - 1 and not self._sleep(1):
-            return self._stopped()
-    self.ui(self._end, "Finished")
+
 
 
 def _do(self, ev):
