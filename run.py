@@ -708,6 +708,267 @@ for fn in (learn_on, learn_off, _learn_key, _learn_moved, _learn_watch, _learn_c
     setattr(App, fn.__name__, fn)
 App.__init__ = _init
 
+# ---------- soft garden UI (keep ABOVE: if __name__ == "__main__":) ----------
+import math, random
+import tkinter.font as tkfont
+from PIL import ImageDraw, ImageFilter
+
+ctk = mr.ctk
+P_WHITE, P_INK, P_MUTE, P_LAV, P_YEL = "#FFFFFF", "#4A4458", "#9A93A8", "#F4EFF9", "#FFE08A"
+PETALS = ["#7FD1CB", "#FFD76E", "#F7A8C4", "#9DB4E8", "#B5D98A"]
+CAT_SOFT = {"o": "#F2B880", "w": "#FFF8EE", "K": "#5A4A42", "P": "#F4A7B0"}
+FRIENDLY = {"ready": "ready when you are", "stopped": "stopped. everything is safe",
+            "finished": "all done ♡", "learning off": "learning is off"}
+SAFE2 = "press fn+f9 any time to stop"
+
+
+def _hand(size, bold=False):
+    return ("Noteworthy", size, "bold" if bold else "normal")
+
+
+def make_garden(W=400, H=720):
+    rnd = random.Random(11)
+    im = Image.new("RGB", (W, H))
+    d = ImageDraw.Draw(im)
+    for y in range(H):
+        col = (mr.lerp("#5FA3A8", "#3F7F86", y / 300) if y < 300
+               else mr.lerp("#86B552", "#A5CF68", (y - 300) / (H - 300)))
+        d.line([(0, y), (W, y)], fill=col)
+    for x in range(0, 400, 28):                                   # fence planks
+        d.rectangle([x, 0, x + 2, 300], fill="#2F6E77")
+        d.rectangle([x + 3, 0, x + 4, 300], fill="#7FB8B8")
+    for y in (90, 230):
+        d.rectangle([0, y, W, y + 8], fill="#2B656E")
+    for cx, cy, r, c in ((30, 20, 62, "#6E9E3F"), (372, 10, 70, "#7DAA4A"),
+                         (130, -10, 40, "#8DB958"), (340, 110, 40, "#5C9440")):
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=c)
+    for x in range(-20, W + 20, 38):                              # bushes along the fence
+        d.ellipse([x, 285 + rnd.randint(-6, 6), x + 60, 335],
+                  fill=mr.lerp("#5E9A44", "#7FB052", rnd.random()))
+    im = im.filter(ImageFilter.GaussianBlur(1.4))                 # soft, dreamy focus
+    d = ImageDraw.Draw(im)
+    for _ in range(70):                                           # daisies
+        y = int(340 + (H - 340) * rnd.random() ** 0.6)
+        x = rnd.randint(0, W)
+        r = 3 + int(6 * (y - 340) / (H - 340)) + rnd.randint(0, 2)
+        for k in range(8):
+            a = k * math.pi / 4
+            px, py = x + math.cos(a) * r * 0.9, y + math.sin(a) * r * 0.9
+            d.ellipse([px - r * .55, py - r * .55, px + r * .55, py + r * .55], fill="#FFFFFF")
+        d.ellipse([x - r * .45, y - r * .45, x + r * .45, y + r * .45], fill="#F6C945")
+    return im.filter(ImageFilter.GaussianBlur(0.6))
+
+
+def flower(cv, cx, cy, r, color, i):
+    for k in range(5):
+        a = k * 2 * math.pi / 5 - math.pi / 2
+        px, py = cx + math.cos(a) * r * .62, cy + math.sin(a) * r * .62
+        cv.create_oval(px - r * .5, py - r * .5, px + r * .5, py + r * .5,
+                       fill=color, outline="", tags=f"fp{i}")
+    cv.create_oval(cx - r * .32, cy - r * .32, cx + r * .32, cy + r * .32,
+                   fill="#FFF4C2", outline="", tags=f"fc{i}")
+
+
+def mini_flower(cv, cx, cy):
+    for dx, dy in ((-3, 0), (3, 0), (0, -3), (0, 3)):
+        cv.create_oval(cx + dx - 2.6, cy + dy - 2.6, cx + dx + 2.6, cy + dy + 2.6,
+                       fill="#FFD76E", outline="", tags="cat")
+    cv.create_oval(cx - 1.8, cy - 1.8, cx + 1.8, cy + 1.8, fill="#F4A33B", outline="", tags="cat")
+
+
+def chip(cv, cx, cy, w, h, label, tag):
+    mr.round_rect(cv, cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2, 18, fill=P_LAV, outline="", tags=tag)
+    cv.create_text(cx, cy - 11, text=label, fill=P_MUTE, font=_hand(9), tags=tag)
+    cv.create_text(cx, cy + 8, text="", fill=P_INK, font=_hand(14, True), tags=(tag, tag + "_v"))
+
+
+class _BrainBtn:
+    """Lets the existing brain-cycling code keep calling .configure(text=...)."""
+    def __init__(self, btn):
+        self.btn = btn
+
+    def configure(self, **kw):
+        if "text" in kw:
+            self.btn.configure(text="brain: " + kw["text"].lower())
+
+
+def _build(self):
+    ctk.set_appearance_mode("light")
+    self.title("Macro Recorder")
+    self.geometry("400x720")
+    self.configure(fg_color="#6E9E3F")
+    cv = self.cv = tk.Canvas(self, width=400, height=720, highlightthickness=0, bd=0)
+    cv.place(x=0, y=0)
+    self.garden = mr.to_photo(make_garden())
+    cv.create_image(0, 0, anchor="nw", image=self.garden)
+    mr.round_rect(cv, 24, 112, 376, 660, 36, fill=P_WHITE, outline="#EDE7F3", width=2)
+    cv.create_text(200, 692, text="( made with care )", fill="#F5F5EE", font=_hand(11))
+
+    def btn(text, cmd, w, h, fg, hover, size, x, y):
+        b = ctk.CTkButton(cv, text=text, command=cmd, width=w, height=h, corner_radius=h // 2,
+                          fg_color=fg, hover_color=hover, text_color=P_INK, text_color_disabled="#B9B2C4",
+                          font=_hand(size, True), bg_color=P_WHITE, border_width=0)
+        cv.create_window(x, y, window=b)
+        return b
+
+    # corner buttons
+    btn("⚙", self.settings_menu, 34, 34, P_LAV, "#EBE3F4", 14, 346, 142)
+    btn("i", lambda: self.set_status(None, "hold fn: f8 stops rec, f9 stops, f10 plays"),
+        34, 34, P_LAV, "#EBE3F4", 13, 306, 142)
+
+    # title + subtitle
+    tf = tkfont.Font(root=self, family="Noteworthy", size=22, weight="bold")
+    w1, w2 = tf.measure("macro recorder"), tf.measure("!")
+    x0 = 200 - (w1 + w2) / 2
+    cv.create_text(x0, 222, text="macro recorder", anchor="w", font=tf, fill=P_INK)
+    cv.create_text(x0 + w1, 222, text="!", anchor="w", font=tf, fill="#7C9CE8")
+    sf = tkfont.Font(root=self, family="Noteworthy", size=10)
+    p1, p2 = "record once", "  ·  replay anytime"
+    s1, s2 = sf.measure(p1), sf.measure(p2)
+    x0 = 200 - (s1 + s2) / 2
+    cv.create_rectangle(x0 - 4, 243, x0 + s1 + 4, 258, fill=P_YEL, outline="")
+    cv.create_text(x0, 250, text=p1, anchor="w", font=sf, fill=P_INK)
+    cv.create_text(x0 + s1, 250, text=p2, anchor="w", font=sf, fill=P_MUTE)
+
+    # flowers
+    for i, c in enumerate(PETALS):
+        flower(cv, 120 + i * 40, 284, 11, c, i)
+
+    # status pill
+    mr.round_rect(cv, 50, 311, 350, 345, 17, fill="#E7F4E4", outline="", tags="pill")
+    cv.create_oval(65, 323, 75, 333, fill="#7CC68C", outline="", tags="sdot")
+    cv.create_text(86, 328, text="ready when you are", anchor="w", fill=P_INK, font=_hand(11),
+                   width=255, tags="status")
+
+    # chips
+    chip(cv, 88, 388, 100, 50, "steps", "c_steps")
+    chip(cv, 200, 388, 100, 50, "repeat  (tap)", "c_rep")
+    chip(cv, 312, 388, 100, 50, "speed  (tap)", "c_spd")
+    mr.clickable(cv, "c_rep", self.cycle_repeat)
+    mr.clickable(cv, "c_spd", self.cycle_speed)
+    cv.create_text(200, 430, text="", fill="#8A7A9B", font=_hand(12), tags="name")
+    mr.clickable(cv, "name", self.save)
+
+    # main buttons
+    self.btn_rec = btn("● record", self.toggle_record, 150, 50, "#F7B6C8", "#F2A2B9", 14, 110, 474)
+    self.btn_act = btn("▶ play", self.toggle_play, 150, 50, "#BFE3C6", "#A6D6B0", 14, 290, 474)
+
+    # smart replay + brain + macros
+    self.smart = ctk.CTkSwitch(cv, text="smart replay", font=_hand(12, True), text_color=P_INK,
+                               progress_color="#EE9DB5", button_color="#FFFFFF",
+                               button_hover_color="#FBEFF3", fg_color="#DCD6E6", bg_color=P_WHITE)
+    self.smart.select()
+    cv.create_window(50, 524, window=self.smart, anchor="w")
+    cv.create_text(50, 546, text="finds buttons even if windows move", anchor="w",
+                   fill=P_MUTE, font=_hand(9))
+    btn("macros ▾", self.open_library, 130, 32, P_LAV, "#EBE3F4", 11, 112, 590)
+    self.lbl_brain = _BrainBtn(btn("brain: local", self.cycle_brain, 130, 32, P_LAV, "#EBE3F4", 11, 288, 590))
+
+    # reassurance
+    cv.create_text(200, 626, text="♡ everything stays on your mac", fill=P_MUTE, font=_hand(10))
+    cv.create_text(200, 643, text=SAFE2, fill=P_MUTE, font=_hand(10), tags="safe2")
+    self._lit, self._learn_txt = -1, None
+
+
+def _tick(self):
+    self.anim += 1
+    a, cv = self.anim, self.cv
+    x, y = 172, 138 + (2 if a % 16 < 8 else 0)
+    if self.recording:
+        x += int(8 * math.sin(a / 5))
+    elif self.playing:
+        y -= int(abs(math.sin(a / 2)) * 8)
+    mr.draw_sprite(cv, mr.CAT, x, y, 6, CAT_SOFT, "cat", blink=a % 24 < 2, tail=a % 8 < 4)
+    for fx, fy in ((x + 9, y + 1), (x + 27, y + 6), (x + 45, y + 1)):   # flower crown
+        mini_flower(cv, fx, fy)
+
+    n = max(1, len(self.events))
+    if self.playing:
+        lit = min(5, 1 + int(getattr(self, "idx", 0) / n * 5))
+    elif self.recording:
+        lit = 1 + (a // 4) % 5
+    else:
+        lit = 5
+    if lit != self._lit:
+        self._lit = lit
+        for i in range(5):
+            on = i < lit
+            cv.itemconfigure(f"fp{i}", fill=PETALS[i] if on else "#E9E5EF")
+            cv.itemconfigure(f"fc{i}", fill="#FFF4C2" if on else "#F3F0F7")
+    txt = "learning is on · fn+f7 pauses" if getattr(self, "learning", False) else SAFE2
+    if txt != self._learn_txt:
+        self._learn_txt = txt
+        cv.itemconfigure("safe2", text=txt)
+    self.after(150, self._tick)
+
+
+def _pill_style(self):
+    if self.recording:
+        bg, dot = "#FDE6EC", "#EE7E9E"
+    elif self.playing:
+        bg, dot = "#E4EEFB", "#6B9BE8"
+    else:
+        bg, dot = "#E7F4E4", "#7CC68C"
+    self.cv.itemconfigure("pill", fill=bg)
+    self.cv.itemconfigure("sdot", fill=dot)
+
+
+def set_status(self, color, text):
+    t = text.lower().strip()
+    self.cv.itemconfigure("status", text=FRIENDLY.get(t, t))
+    self._pill_style()
+
+
+def refresh_lcd(self):
+    self.cv.itemconfigure("name", text=f"{self.macro_name.lower()}  ✎")
+    self.cv.itemconfigure("c_steps_v", text=str(self.nsteps))
+    self.cv.itemconfigure("c_rep_v", text=f"×{self.repeat_n}")
+    self.cv.itemconfigure("c_spd_v", text=f"{self.speed_v:g}×")
+
+
+def update_count(self):
+    self.nsteps = sum(1 for e in self.events if e["type"] in ("click", "key") and e["pressed"])
+    self.cv.itemconfigure("c_steps_v", text=str(self.nsteps))
+
+
+def refresh_buttons(self):
+    self.btn_rec.configure(text="■ stop" if self.recording else "● record",
+                           fg_color="#F28DA6" if self.recording else "#F7B6C8",
+                           state="disabled" if self.playing else "normal")
+    self.btn_act.configure(text="■ stop" if self.playing else "▶ play",
+                           fg_color="#8FD0A0" if self.playing else "#BFE3C6",
+                           state="disabled" if self.recording else "normal")
+    self._pill_style()
+
+
+def open_library(self):
+    names = sorted(p.stem for p in mr.MACRO_DIR.glob("*.json"))
+    win = ctk.CTkToplevel(self)
+    win.title("my macros")
+    win.geometry("320x400")
+    win.configure(fg_color=P_WHITE)
+    win.after(100, win.lift)
+    ctk.CTkLabel(win, text="my macros ♡", font=_hand(16, True), text_color=P_INK).pack(pady=(16, 8))
+    box = ctk.CTkScrollableFrame(win, fg_color=P_LAV, corner_radius=18)
+    box.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+    if not names:
+        ctk.CTkLabel(box, text="nothing saved yet.\ntap the macro name to save one.",
+                     font=_hand(11), text_color=P_MUTE).pack(pady=24)
+    for n in names:
+        row = ctk.CTkFrame(box, fg_color="transparent")
+        row.pack(fill="x", pady=3)
+        ctk.CTkButton(row, text=n.lower(), anchor="w", font=_hand(12), fg_color=P_WHITE,
+                      hover_color="#FBEFF3", text_color=P_INK, corner_radius=14,
+                      command=lambda n=n: (self.load_named(n), win.destroy())
+                      ).pack(side="left", fill="x", expand=True)
+        ctk.CTkButton(row, text="✕", width=32, font=_hand(12, True), fg_color="transparent",
+                      hover_color="#FBEFF3", text_color=P_MUTE,
+                      command=lambda n=n: (self.delete_named(n), win.destroy())).pack(side="left", padx=(6, 0))
+
+
+for fn in (_build, _tick, _pill_style, set_status, refresh_lcd, update_count, refresh_buttons, open_library):
+    setattr(App, fn.__name__, fn)
+    
 if __name__ == "__main__":
     app = App()
     app.strict_var = tk.BooleanVar(value=app.cfg.get("strict", False))
