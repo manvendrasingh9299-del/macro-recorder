@@ -50,6 +50,7 @@ latest fixes on top.
 Give permission to the app you launch from (Terminal or Visual Studio Code) in
 System Settings, then press Cmd+Q to quit that app and reopen it:
 
+<<<<<<< HEAD
 | Permission | Where in System Settings |
 |---|---|
 | Accessibility | Privacy & Security, **Device Control and Data Access** (called Accessibility on older macOS) |
@@ -198,3 +199,7 @@ requirements.txt    dependencies
 ## License
 
 Add a license before sharing, for example MIT.
+=======
+## Warning
+Macros record everything you type, including passwords..
+>>>>>>> ab23ddd (update)
