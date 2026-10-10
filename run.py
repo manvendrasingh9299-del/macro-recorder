@@ -1,23 +1,38 @@
-"""Fixes + upgrades on top of macro_recorder.py.   Run:  python run.py"""
-import json, os, shutil, subprocess, threading, time, tkinter as tk, urllib.request
+"""
+run.py - launcher for Macro Recorder. Loads macro_recorder.py (the base app) and applies the
+latest fixes and features on top.  Start the app with:   python run.py
+"""
+import base64, datetime, json, math, os, random, shutil, subprocess, threading, time
+import tkinter as tk
+import urllib.request
 from collections import deque
+from tkinter import messagebox
 
+import cv2
 import numpy as np
-from PIL import Image, ImageGrab
-from Quartz import (CGDisplayCreateImage, CGMainDisplayID, CGImageGetWidth, CGImageGetHeight,
-                    CGImageGetBytesPerRow, CGImageGetDataProvider, CGDataProviderCopyData)
-from pynput import mouse
+from AppKit import NSWorkspace
+from PIL import Image, ImageDraw, ImageFilter, ImageGrab
+from pynput import keyboard, mouse
+from Quartz import (CGDataProviderCopyData, CGDisplayCreateImage, CGEventCreateMouseEvent, CGEventPost,
+                    CGEventSetIntegerValueField, CGEventSourceCreate, CGImageGetBytesPerRow,
+                    CGImageGetDataProvider, CGImageGetHeight, CGImageGetWidth, CGMainDisplayID,
+                    kCGEventMouseMoved, kCGEventSourceStateHIDSystemState, kCGHIDEventTap,
+                    kCGMouseEventClickState)
 
 import macro_recorder as mr
-from macro_recorder import (App, ACCENT, GREEN, GREY, RED, OLLAMA_DEFAULT, CROP_PT, COUNTDOWN,
-                            BTN, b64, save_cfg, post_mouse, move_to, mouse_ctl, kb_ctl, data_to_key)
+from macro_recorder import (ACCENT, BTN, COUNTDOWN, CROP_PT, GREEN, GREY, OLLAMA_DEFAULT, RED, App, b64,
+                            data_to_key, kb_ctl, mouse_ctl, save_cfg)
 
-mr.MATCH_MIN = 0.72   # a bit more forgiving (hover highlights change how buttons look)
-WAIT_S = 5.0          # seconds to keep looking for a target
+ctk = mr.ctk
+mr.MATCH_MIN = 0.72   # a bit forgiving: hover highlights change how buttons look
+WAIT_S = 5.0          # seconds to keep looking for a target before giving up
 
 
-# ---------- fast screenshot ----------
+# =====================================================================================
+# Screen + Ollama helpers
+# =====================================================================================
 def grab_screen():
+    """Fast screenshot (about 40 ms)."""
     try:
         img = CGDisplayCreateImage(CGMainDisplayID())
         w, h, bpr = CGImageGetWidth(img), CGImageGetHeight(img), CGImageGetBytesPerRow(img)
@@ -27,7 +42,6 @@ def grab_screen():
         return ImageGrab.grab().convert("RGB")
 
 
-# ---------- Ollama auto-start ----------
 def ollama_up():
     try:
         urllib.request.urlopen("http://localhost:11434/api/tags", timeout=1).read()
@@ -61,7 +75,32 @@ def ensure_ollama(model):
     return ""
 
 
-# ---------- recording: save each click as it looked BEFORE the click ----------
+# =====================================================================================
+# Reliable clicks (sent through macOS directly, with a gentle pointer glide)
+# =====================================================================================
+_SRC = CGEventSourceCreate(kCGEventSourceStateHIDSystemState)
+
+
+def _send(kind, x, y, btn=0, n=1):
+    e = CGEventCreateMouseEvent(_SRC, kind, (x, y), btn)
+    CGEventSetIntegerValueField(e, kCGMouseEventClickState, n)
+    CGEventPost(kCGHIDEventTap, e)
+
+
+def glide_to(x, y, fast=False):
+    """Move in small steps, then pause, so the Dock and menus notice the pointer."""
+    sx, sy = mouse_ctl.position
+    steps = 3 if fast else 6
+    for i in range(1, steps + 1):
+        _send(kCGEventMouseMoved, sx + (x - sx) * i / steps, sy + (y - sy) * i / steps)
+        time.sleep(0.015)
+    _send(kCGEventMouseMoved, x, y)
+    time.sleep(0.12 if fast else 0.25)
+
+
+# =====================================================================================
+# Recording (saves each click picture from just BEFORE the click; supports double-clicks)
+# =====================================================================================
 def _begin_record(self):
     if not self.recording:
         return
@@ -97,199 +136,6 @@ def grab_crop(self, x, y, when):
 def on_click(self, x, y, button, pressed):
     if not self.capturing:
         return
-    now = time.time()
-    ev = {"type": "click", "x": x, "y": y, "button": button.name, "pressed": pressed,
-          "t": round(now - self.t0, 3)}
-    if pressed:
-        ev.update(self.grab_crop(x, y, now))
-    self.events.append(ev)
-    self.ui(self.update_count)
-
-
-# ---------- playback ----------
-def find(self, ev):
-    end, tries = time.time() + WAIT_S, 0
-    while time.time() < end and not self.abort.is_set():
-        try:
-            shot = grab_screen()
-            hit = self.match_local(ev, shot)
-            if hit:
-                return hit
-            if self.brain in ("claude", "ollama", "plugin") and tries < 2:
-                tries += 1
-                hit = self.model_find(ev, shot, shot.width / self.sw)
-                if hit:
-                    return hit
-        except Exception as exc:
-            print("Find error:", exc)
-        if not self._sleep(0.5):
-            return None
-    return None
-
-
-def _play(self, repeat, speed):
-    if self.brain == "ollama":
-        self.ui(self.set_status, ACCENT, "Starting Ollama")
-        problem = ensure_ollama(self.cfg.get("ollama_model", OLLAMA_DEFAULT))
-        if problem:
-            self.ui(self.set_status, ACCENT, problem)
-    if not self._sleep(COUNTDOWN):
-        return self._stopped()
-    for n in range(repeat):
-        self.ui(self.set_status, GREEN, f"Playing {n + 1} of {repeat}")
-        prev = 0.0
-        for ev in self.events:
-            if not self._sleep((ev["t"] - prev) / speed):
-                return self._stopped()
-            prev = ev["t"]
-            self._do(ev)
-        if n < repeat - 1 and not self._sleep(1):
-            return self._stopped()
-    self.ui(self._end, "Finished")
-
-
-def _do(self, ev):
-    try:
-        if ev["type"] == "click":
-            if ev["pressed"]:
-                self.cur = (ev["x"], ev["y"])
-                if self.brain != "exact" and ev.get("crop"):
-                    self.ui(self.set_status, ACCENT, "Finding target")
-                    hit = self.find(ev)
-                    print(f"[find] recorded=({ev['x']:.0f},{ev['y']:.0f}) found={hit}")
-                    if hit:
-                        self.cur = hit
-                    elif self.abort.is_set():
-                        return
-                    elif self.strict_var.get():
-                        self.fail = "Target not found. Stopped"
-                        self.abort.set()
-                        return
-                    else:
-                        self.ui(self.set_status, ACCENT, "Not found, using saved spot")
-                now = time.time()
-                near = (abs(self.cur[0] - self.last_click[1][0]) < 8
-                        and abs(self.cur[1] - self.last_click[1][1]) < 8)
-                self.click_n = self.click_n + 1 if now - self.last_click[0] < 0.45 and near else 1
-                self.last_click = (now, self.cur)
-                move_to(*self.cur)
-            down, up, btn = BTN.get(ev["button"], BTN["left"])
-            post_mouse(down if ev["pressed"] else up, *self.cur, btn, self.click_n)
-            print(f"[click] {ev['button']} {'down' if ev['pressed'] else 'up'} at ({self.cur[0]:.0f}, {self.cur[1]:.0f})")
-        elif ev["type"] == "scroll":
-            move_to(ev["x"], ev["y"])
-            mouse_ctl.scroll(ev["dx"], ev["dy"])
-        elif ev["type"] == "key":
-            (kb_ctl.press if ev["pressed"] else kb_ctl.release)(data_to_key(ev["key"]))
-    except Exception as exc:
-        print("Action failed:", exc)
-
-
-# ---------- settings menu ----------
-def save_strict(self):
-    self.cfg["strict"] = self.strict_var.get()
-    save_cfg(self.cfg)
-
-
-def settings_menu(self):
-    m = tk.Menu(self, tearoff=0)
-    m.add_command(label="Anthropic API key…", command=self.ask_key)
-    m.add_command(label="Ollama model…", command=self.ask_model)
-    m.add_checkbutton(label="Stop if target not found", variable=self.strict_var, command=self.save_strict)
-    m.add_command(label="Open app folder", command=self.open_folder)
-    m.add_separator()
-    m.add_command(label="Fn+F8 stop rec   Fn+F9 stop play   Fn+F10 run", state="disabled")
-    m.tk_popup(self.winfo_pointerx(), self.winfo_pointery())
-
-
-for fn in (_begin_record, _watch, grab_crop, on_click, find, _play, _do, save_strict, settings_menu):
-    setattr(App, fn.__name__, fn)
-
-# ---------- double-click support ----------
-def on_click(self, x, y, button, pressed):
-    if not self.capturing:
-        return
-    now = time.time()
-    if not self.events:
-        self.rec_last, self.cur_n = (0.0, (0, 0), 1), 1
-    ev = {"type": "click", "x": x, "y": y, "button": button.name, "pressed": pressed,
-          "t": round(now - self.t0, 3)}
-    if pressed:
-        lt, lp, ln = self.rec_last
-        near = abs(x - lp[0]) < 8 and abs(y - lp[1]) < 8
-        self.cur_n = ln + 1 if now - lt < 0.5 and near else 1
-        self.rec_last = (now, (x, y), self.cur_n)
-        if self.cur_n == 1:  # repeat clicks reuse the first click's target
-            ev.update(self.grab_crop(x, y, now))
-    ev["n"] = self.cur_n
-    self.events.append(ev)
-    self.ui(self.update_count)
-
-
-def _do(self, ev):
-    try:
-        if ev["type"] == "click":
-            n = ev.get("n", 1)
-            if ev["pressed"] and n == 1:
-                self.cur = (ev["x"], ev["y"])
-                if self.brain != "exact" and ev.get("crop"):
-                    self.ui(self.set_status, ACCENT, "Finding target")
-                    hit = self.find(ev)
-                    print(f"[find] recorded=({ev['x']:.0f},{ev['y']:.0f}) found={hit}")
-                    if hit:
-                        self.cur = hit
-                    elif self.abort.is_set():
-                        return
-                    elif self.strict_var.get():
-                        self.fail = "Target not found. Stopped"
-                        self.abort.set()
-                        return
-                    else:
-                        self.ui(self.set_status, ACCENT, "Not found, using saved spot")
-                move_to(*self.cur)
-            down, up, btn = BTN.get(ev["button"], BTN["left"])
-            post_mouse(down if ev["pressed"] else up, *self.cur, btn, n)
-            print(f"[click x{n}] {ev['button']} {'down' if ev['pressed'] else 'up'} at ({self.cur[0]:.0f}, {self.cur[1]:.0f})")
-        elif ev["type"] == "scroll":
-            move_to(ev["x"], ev["y"])
-            mouse_ctl.scroll(ev["dx"], ev["dy"])
-        elif ev["type"] == "key":
-            (kb_ctl.press if ev["pressed"] else kb_ctl.release)(data_to_key(ev["key"]))
-    except Exception as exc:
-        print("Action failed:", exc)
-
-
-App.on_click = on_click
-App._do = _do
-
-# ---------- reliable clicks (keep this ABOVE: if __name__ == "__main__":) ----------
-from Quartz import (CGEventSourceCreate, kCGEventSourceStateHIDSystemState,
-                    CGEventCreateMouseEvent as _mk, CGEventPost as _post,
-                    CGEventSetIntegerValueField as _setf, kCGMouseEventClickState as _CS,
-                    kCGEventMouseMoved as _MV, kCGHIDEventTap as _TAP)
-
-_SRC = CGEventSourceCreate(kCGEventSourceStateHIDSystemState)
-
-
-def _send(kind, x, y, btn=0, n=1):
-    e = _mk(_SRC, kind, (x, y), btn)
-    _setf(e, _CS, n)
-    _post(_TAP, e)
-
-
-def glide_to(x, y):
-    """Move in small steps, then pause, so the Dock and menus notice the pointer."""
-    sx, sy = mouse_ctl.position
-    for i in range(1, 7):
-        _send(_MV, sx + (x - sx) * i / 6, sy + (y - sy) * i / 6)
-        time.sleep(0.015)
-    _send(_MV, x, y)
-    time.sleep(0.25)
-
-
-def on_click(self, x, y, button, pressed):
-    if not self.capturing:
-        return
     try:
         now = time.time()
         if not self.events:
@@ -310,61 +156,9 @@ def on_click(self, x, y, button, pressed):
         print("Record error:", exc)
 
 
-def _do(self, ev):
-    try:
-        if ev["type"] == "click":
-            n = ev.get("n", 1)
-            if ev["pressed"] and n == 1:
-                self.cur = (ev["x"], ev["y"])
-                if self.brain != "exact" and ev.get("crop"):
-                    self.ui(self.set_status, ACCENT, "Finding target")
-                    hit = self.find(ev)
-                    print(f"[find] recorded=({ev['x']:.0f},{ev['y']:.0f}) found={hit}")
-                    if hit:
-                        self.cur = hit
-                    elif self.abort.is_set():
-                        return
-                    elif self.strict_var.get():
-                        self.fail = "Target not found. Stopped"
-                        self.abort.set()
-                        return
-                    else:
-                        self.ui(self.set_status, ACCENT, "Not found, using saved spot")
-                glide_to(*self.cur)
-            down, up, btn = BTN.get(ev["button"], BTN["left"])
-            if not ev["pressed"]:
-                time.sleep(0.05)  # hold the button long enough to count as a click
-            _send(down if ev["pressed"] else up, self.cur[0], self.cur[1], btn, n)
-            print(f"[click x{n}] {ev['button']} {'down' if ev['pressed'] else 'up'} at ({self.cur[0]:.0f}, {self.cur[1]:.0f})")
-        elif ev["type"] == "scroll":
-            glide_to(ev["x"], ev["y"])
-            mouse_ctl.scroll(ev["dx"], ev["dy"])
-        elif ev["type"] == "key":
-            (kb_ctl.press if ev["pressed"] else kb_ctl.release)(data_to_key(ev["key"]))
-    except Exception as exc:
-        print("Action failed:", exc)
-
-
-App.on_click = on_click
-App._do = _do
-
-# ---------- learn once, then run fast (keep this ABOVE: if __name__ == "__main__":) ----------
-import base64
-import cv2
-from tkinter import messagebox
-
-
-def glide_to(x, y, fast=False):
-    """Move in small steps, then pause, so the Dock and menus notice the pointer."""
-    sx, sy = mouse_ctl.position
-    steps = 3 if fast else 6
-    for i in range(1, steps + 1):
-        _send(_MV, sx + (x - sx) * i / steps, sy + (y - sy) * i / steps)
-        time.sleep(0.015)
-    _send(_MV, x, y)
-    time.sleep(0.12 if fast else 0.25)
-
-
+# =====================================================================================
+# Finding targets + playback (learn once, then run fast)
+# =====================================================================================
 def fast_delay(ev, gap):
     """How long the fast version waits before this step."""
     if ev["type"] == "click":
@@ -520,15 +314,9 @@ def make_fast(self):
         self.save()
 
 
-for fn in (get_tpl, match_fast, find, _play, _do, ask_fast, make_fast):
-    setattr(App, fn.__name__, fn)
-    
-    # ---------- Learn from my day (keep ABOVE: if __name__ == "__main__":) ----------
-import datetime
-from tkinter import messagebox
-from pynput import keyboard, mouse
-from AppKit import NSWorkspace
-
+# =====================================================================================
+# Learn from my day (optional training data)
+# =====================================================================================
 LEARN_DIR = mr.APP_DIR / "learn"
 LEARN_CAP_GB = 3.0
 SKIP_APPS = ("1password", "bitwarden", "keychain", "passwords", "lastpass", "dashlane",
@@ -570,9 +358,9 @@ def learn_on(self):
 
 def learn_off(self):
     self.learning = False
-    for l in (getattr(self, "l_mouse", None), getattr(self, "l_keys", None)):
-        if l:
-            l.stop()
+    for lst in (getattr(self, "l_mouse", None), getattr(self, "l_keys", None)):
+        if lst:
+            lst.stop()
     self.title("Macro Recorder")
     self.set_status(GREY, "Learning off")
 
@@ -672,9 +460,12 @@ def delete_learned(self):
         self.set_status(GREY, "Learned data deleted")
 
 
+def save_strict(self):
+    self.cfg["strict"] = self.strict_var.get()
+    save_cfg(self.cfg)
+
+
 def settings_menu(self):
-    if not hasattr(self, "learn_var"):
-        self.learn_var = tk.BooleanVar(value=getattr(self, "learning", False))
     n, gb = learn_stats()
     m = tk.Menu(self, tearoff=0)
     m.add_command(label="Anthropic API key…", command=self.ask_key)
@@ -688,7 +479,7 @@ def settings_menu(self):
     m.add_command(label="Delete learned data…", command=self.delete_learned)
     m.add_separator()
     m.add_command(label="Open app folder", command=self.open_folder)
-    m.add_command(label="Fn+F7 pause learning   Fn+F8 stop rec   Fn+F10 run", state="disabled")
+    m.add_command(label="Fn+F7 pause learning   Fn+F8 stop rec   Fn+F10 play", state="disabled")
     m.tk_popup(self.winfo_pointerx(), self.winfo_pointery())
 
 
@@ -697,289 +488,23 @@ _orig_init = App.__init__
 
 def _init(self, *a, **k):
     _orig_init(self, *a, **k)
+    self.strict_var = tk.BooleanVar(value=self.cfg.get("strict", False))
     self.learn_var = tk.BooleanVar(value=False)
     if self.cfg.get("learn") and self.cfg.get("learn_ok"):
         self.learn_var.set(True)
         self.after(1000, self.learn_on)
 
 
-for fn in (learn_on, learn_off, _learn_key, _learn_moved, _learn_watch, _learn_click, _learn_save,
-           toggle_learn, delete_learned, settings_menu):
-    setattr(App, fn.__name__, fn)
-App.__init__ = _init
-
-# ---------- soft garden UI (keep ABOVE: if __name__ == "__main__":) ----------
-import math, random
-import tkinter.font as tkfont
-from PIL import ImageDraw, ImageFilter
-
-ctk = mr.ctk
-P_WHITE, P_INK, P_MUTE, P_LAV, P_YEL = "#FFFFFF", "#4A4458", "#9A93A8", "#F4EFF9", "#FFE08A"
-PETALS = ["#7FD1CB", "#FFD76E", "#F7A8C4", "#9DB4E8", "#B5D98A"]
-CAT_SOFT = {"o": "#F2B880", "w": "#FFF8EE", "K": "#5A4A42", "P": "#F4A7B0"}
-FRIENDLY = {"ready": "ready when you are", "stopped": "stopped. everything is safe",
-            "finished": "all done ♡", "learning off": "learning is off"}
-SAFE2 = "press fn+f9 any time to stop"
-
-
-def _hand(size, bold=False):
-    return ("Noteworthy", size, "bold" if bold else "normal")
-
-
-def make_garden(W=400, H=720):
-    rnd = random.Random(11)
-    im = Image.new("RGB", (W, H))
-    d = ImageDraw.Draw(im)
-    for y in range(H):
-        col = (mr.lerp("#5FA3A8", "#3F7F86", y / 300) if y < 300
-               else mr.lerp("#86B552", "#A5CF68", (y - 300) / (H - 300)))
-        d.line([(0, y), (W, y)], fill=col)
-    for x in range(0, 400, 28):                                   # fence planks
-        d.rectangle([x, 0, x + 2, 300], fill="#2F6E77")
-        d.rectangle([x + 3, 0, x + 4, 300], fill="#7FB8B8")
-    for y in (90, 230):
-        d.rectangle([0, y, W, y + 8], fill="#2B656E")
-    for cx, cy, r, c in ((30, 20, 62, "#6E9E3F"), (372, 10, 70, "#7DAA4A"),
-                         (130, -10, 40, "#8DB958"), (340, 110, 40, "#5C9440")):
-        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=c)
-    for x in range(-20, W + 20, 38):                              # bushes along the fence
-        d.ellipse([x, 285 + rnd.randint(-6, 6), x + 60, 335],
-                  fill=mr.lerp("#5E9A44", "#7FB052", rnd.random()))
-    im = im.filter(ImageFilter.GaussianBlur(1.4))                 # soft, dreamy focus
-    d = ImageDraw.Draw(im)
-    for _ in range(70):                                           # daisies
-        y = int(340 + (H - 340) * rnd.random() ** 0.6)
-        x = rnd.randint(0, W)
-        r = 3 + int(6 * (y - 340) / (H - 340)) + rnd.randint(0, 2)
-        for k in range(8):
-            a = k * math.pi / 4
-            px, py = x + math.cos(a) * r * 0.9, y + math.sin(a) * r * 0.9
-            d.ellipse([px - r * .55, py - r * .55, px + r * .55, py + r * .55], fill="#FFFFFF")
-        d.ellipse([x - r * .45, y - r * .45, x + r * .45, y + r * .45], fill="#F6C945")
-    return im.filter(ImageFilter.GaussianBlur(0.6))
-
-
-def flower(cv, cx, cy, r, color, i):
-    for k in range(5):
-        a = k * 2 * math.pi / 5 - math.pi / 2
-        px, py = cx + math.cos(a) * r * .62, cy + math.sin(a) * r * .62
-        cv.create_oval(px - r * .5, py - r * .5, px + r * .5, py + r * .5,
-                       fill=color, outline="", tags=f"fp{i}")
-    cv.create_oval(cx - r * .32, cy - r * .32, cx + r * .32, cy + r * .32,
-                   fill="#FFF4C2", outline="", tags=f"fc{i}")
-
-
-def mini_flower(cv, cx, cy):
-    for dx, dy in ((-3, 0), (3, 0), (0, -3), (0, 3)):
-        cv.create_oval(cx + dx - 2.6, cy + dy - 2.6, cx + dx + 2.6, cy + dy + 2.6,
-                       fill="#FFD76E", outline="", tags="cat")
-    cv.create_oval(cx - 1.8, cy - 1.8, cx + 1.8, cy + 1.8, fill="#F4A33B", outline="", tags="cat")
-
-
-def chip(cv, cx, cy, w, h, label, tag):
-    mr.round_rect(cv, cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2, 18, fill=P_LAV, outline="", tags=tag)
-    cv.create_text(cx, cy - 11, text=label, fill=P_MUTE, font=_hand(9), tags=tag)
-    cv.create_text(cx, cy + 8, text="", fill=P_INK, font=_hand(14, True), tags=(tag, tag + "_v"))
-
-
-class _BrainBtn:
-    """Lets the existing brain-cycling code keep calling .configure(text=...)."""
-    def __init__(self, btn):
-        self.btn = btn
-
-    def configure(self, **kw):
-        if "text" in kw:
-            self.btn.configure(text="brain: " + kw["text"].lower())
-
-
-def _build(self):
-    ctk.set_appearance_mode("light")
-    self.title("Macro Recorder")
-    self.geometry("400x720")
-    self.configure(fg_color="#6E9E3F")
-    cv = self.cv = tk.Canvas(self, width=400, height=720, highlightthickness=0, bd=0)
-    cv.place(x=0, y=0)
-    self.garden = mr.to_photo(make_garden())
-    cv.create_image(0, 0, anchor="nw", image=self.garden)
-    mr.round_rect(cv, 24, 112, 376, 660, 36, fill=P_WHITE, outline="#EDE7F3", width=2)
-    cv.create_text(200, 692, text="( made with care )", fill="#F5F5EE", font=_hand(11))
-
-    def btn(text, cmd, w, h, fg, hover, size, x, y):
-        b = ctk.CTkButton(cv, text=text, command=cmd, width=w, height=h, corner_radius=h // 2,
-                          fg_color=fg, hover_color=hover, text_color=P_INK, text_color_disabled="#B9B2C4",
-                          font=_hand(size, True), bg_color=P_WHITE, border_width=0)
-        cv.create_window(x, y, window=b)
-        return b
-
-    # corner buttons
-    btn("⚙", self.settings_menu, 34, 34, P_LAV, "#EBE3F4", 14, 346, 142)
-    btn("i", lambda: self.set_status(None, "hold fn: f8 stops rec, f9 stops, f10 plays"),
-        34, 34, P_LAV, "#EBE3F4", 13, 306, 142)
-
-    # title + subtitle
-    tf = tkfont.Font(root=self, family="Noteworthy", size=22, weight="bold")
-    w1, w2 = tf.measure("macro recorder"), tf.measure("!")
-    x0 = 200 - (w1 + w2) / 2
-    cv.create_text(x0, 222, text="macro recorder", anchor="w", font=tf, fill=P_INK)
-    cv.create_text(x0 + w1, 222, text="!", anchor="w", font=tf, fill="#7C9CE8")
-    sf = tkfont.Font(root=self, family="Noteworthy", size=10)
-    p1, p2 = "record once", "  ·  replay anytime"
-    s1, s2 = sf.measure(p1), sf.measure(p2)
-    x0 = 200 - (s1 + s2) / 2
-    cv.create_rectangle(x0 - 4, 243, x0 + s1 + 4, 258, fill=P_YEL, outline="")
-    cv.create_text(x0, 250, text=p1, anchor="w", font=sf, fill=P_INK)
-    cv.create_text(x0 + s1, 250, text=p2, anchor="w", font=sf, fill=P_MUTE)
-
-    # flowers
-    for i, c in enumerate(PETALS):
-        flower(cv, 120 + i * 40, 284, 11, c, i)
-
-    # status pill
-    mr.round_rect(cv, 50, 311, 350, 345, 17, fill="#E7F4E4", outline="", tags="pill")
-    cv.create_oval(65, 323, 75, 333, fill="#7CC68C", outline="", tags="sdot")
-    cv.create_text(86, 328, text="ready when you are", anchor="w", fill=P_INK, font=_hand(11),
-                   width=255, tags="status")
-
-    # chips
-    chip(cv, 88, 388, 100, 50, "steps", "c_steps")
-    chip(cv, 200, 388, 100, 50, "repeat  (tap)", "c_rep")
-    chip(cv, 312, 388, 100, 50, "speed  (tap)", "c_spd")
-    mr.clickable(cv, "c_rep", self.cycle_repeat)
-    mr.clickable(cv, "c_spd", self.cycle_speed)
-    cv.create_text(200, 430, text="", fill="#8A7A9B", font=_hand(12), tags="name")
-    mr.clickable(cv, "name", self.save)
-
-    # main buttons
-    self.btn_rec = btn("● record", self.toggle_record, 150, 50, "#F7B6C8", "#F2A2B9", 14, 110, 474)
-    self.btn_act = btn("▶ play", self.toggle_play, 150, 50, "#BFE3C6", "#A6D6B0", 14, 290, 474)
-
-    # smart replay + brain + macros
-    self.smart = ctk.CTkSwitch(cv, text="smart replay", font=_hand(12, True), text_color=P_INK,
-                               progress_color="#EE9DB5", button_color="#FFFFFF",
-                               button_hover_color="#FBEFF3", fg_color="#DCD6E6", bg_color=P_WHITE)
-    self.smart.select()
-    cv.create_window(50, 524, window=self.smart, anchor="w")
-    cv.create_text(50, 546, text="finds buttons even if windows move", anchor="w",
-                   fill=P_MUTE, font=_hand(9))
-    btn("macros ▾", self.open_library, 130, 32, P_LAV, "#EBE3F4", 11, 112, 590)
-    self.lbl_brain = _BrainBtn(btn("brain: local", self.cycle_brain, 130, 32, P_LAV, "#EBE3F4", 11, 288, 590))
-
-    # reassurance
-    cv.create_text(200, 626, text="♡ everything stays on your mac", fill=P_MUTE, font=_hand(10))
-    cv.create_text(200, 643, text=SAFE2, fill=P_MUTE, font=_hand(10), tags="safe2")
-    self._lit, self._learn_txt = -1, None
-
-
-def _tick(self):
-    self.anim += 1
-    a, cv = self.anim, self.cv
-    x, y = 172, 138 + (2 if a % 16 < 8 else 0)
-    if self.recording:
-        x += int(8 * math.sin(a / 5))
-    elif self.playing:
-        y -= int(abs(math.sin(a / 2)) * 8)
-    mr.draw_sprite(cv, mr.CAT, x, y, 6, CAT_SOFT, "cat", blink=a % 24 < 2, tail=a % 8 < 4)
-    for fx, fy in ((x + 9, y + 1), (x + 27, y + 6), (x + 45, y + 1)):   # flower crown
-        mini_flower(cv, fx, fy)
-
-    n = max(1, len(self.events))
-    if self.playing:
-        lit = min(5, 1 + int(getattr(self, "idx", 0) / n * 5))
-    elif self.recording:
-        lit = 1 + (a // 4) % 5
-    else:
-        lit = 5
-    if lit != self._lit:
-        self._lit = lit
-        for i in range(5):
-            on = i < lit
-            cv.itemconfigure(f"fp{i}", fill=PETALS[i] if on else "#E9E5EF")
-            cv.itemconfigure(f"fc{i}", fill="#FFF4C2" if on else "#F3F0F7")
-    txt = "learning is on · fn+f7 pauses" if getattr(self, "learning", False) else SAFE2
-    if txt != self._learn_txt:
-        self._learn_txt = txt
-        cv.itemconfigure("safe2", text=txt)
-    self.after(150, self._tick)
-
-
-def _pill_style(self):
-    if self.recording:
-        bg, dot = "#FDE6EC", "#EE7E9E"
-    elif self.playing:
-        bg, dot = "#E4EEFB", "#6B9BE8"
-    else:
-        bg, dot = "#E7F4E4", "#7CC68C"
-    self.cv.itemconfigure("pill", fill=bg)
-    self.cv.itemconfigure("sdot", fill=dot)
-
-
-def set_status(self, color, text):
-    t = text.lower().strip()
-    self.cv.itemconfigure("status", text=FRIENDLY.get(t, t))
-    self._pill_style()
-
-
-def refresh_lcd(self):
-    self.cv.itemconfigure("name", text=f"{self.macro_name.lower()}  ✎")
-    self.cv.itemconfigure("c_steps_v", text=str(self.nsteps))
-    self.cv.itemconfigure("c_rep_v", text=f"×{self.repeat_n}")
-    self.cv.itemconfigure("c_spd_v", text=f"{self.speed_v:g}×")
-
-
-def update_count(self):
-    self.nsteps = sum(1 for e in self.events if e["type"] in ("click", "key") and e["pressed"])
-    self.cv.itemconfigure("c_steps_v", text=str(self.nsteps))
-
-
-def refresh_buttons(self):
-    self.btn_rec.configure(text="■ stop" if self.recording else "● record",
-                           fg_color="#F28DA6" if self.recording else "#F7B6C8",
-                           state="disabled" if self.playing else "normal")
-    self.btn_act.configure(text="■ stop" if self.playing else "▶ play",
-                           fg_color="#8FD0A0" if self.playing else "#BFE3C6",
-                           state="disabled" if self.recording else "normal")
-    self._pill_style()
-
-
-def open_library(self):
-    names = sorted(p.stem for p in mr.MACRO_DIR.glob("*.json"))
-    win = ctk.CTkToplevel(self)
-    win.title("my macros")
-    win.geometry("320x400")
-    win.configure(fg_color=P_WHITE)
-    win.after(100, win.lift)
-    ctk.CTkLabel(win, text="my macros ♡", font=_hand(16, True), text_color=P_INK).pack(pady=(16, 8))
-    box = ctk.CTkScrollableFrame(win, fg_color=P_LAV, corner_radius=18)
-    box.pack(fill="both", expand=True, padx=16, pady=(0, 16))
-    if not names:
-        ctk.CTkLabel(box, text="nothing saved yet.\ntap the macro name to save one.",
-                     font=_hand(11), text_color=P_MUTE).pack(pady=24)
-    for n in names:
-        row = ctk.CTkFrame(box, fg_color="transparent")
-        row.pack(fill="x", pady=3)
-        ctk.CTkButton(row, text=n.lower(), anchor="w", font=_hand(12), fg_color=P_WHITE,
-                      hover_color="#FBEFF3", text_color=P_INK, corner_radius=14,
-                      command=lambda n=n: (self.load_named(n), win.destroy())
-                      ).pack(side="left", fill="x", expand=True)
-        ctk.CTkButton(row, text="✕", width=32, font=_hand(12, True), fg_color="transparent",
-                      hover_color="#FBEFF3", text_color=P_MUTE,
-                      command=lambda n=n: (self.delete_named(n), win.destroy())).pack(side="left", padx=(6, 0))
-
-
-for fn in (_build, _tick, _pill_style, set_status, refresh_lcd, update_count, refresh_buttons, open_library):
-    setattr(App, fn.__name__, fn)
-    
-    # ---------- clean soft UI (keep ABOVE: if __name__ == "__main__":) ----------
-import math, random
-from PIL import Image, ImageDraw, ImageFilter
-
-ctk = mr.ctk
+# =====================================================================================
+# Clean soft UI
+# =====================================================================================
 FONT = "Avenir Next"     # try "Helvetica Neue" or "Noteworthy" if you prefer
 INK, MUTE, LAV, WHITE = "#4A4458", "#857D98", "#F4EFF9", "#FFFFFF"
 CREAM, ORANGE, PATCH, PINK, EDGE = "#FFF6EA", "#F3B27A", "#8A6A58", "#F4A7B0", "#EBDDCB"
 PILLS = {"ready": ("#E7F4E4", "#7CC68C"), "rec": ("#FDE6EC", "#EE7E9E"), "play": ("#E4EEFB", "#6B9BE8")}
 FRIENDLY = {"ready": "ready when you are", "stopped": "stopped. everything is safe",
-            "finished": "all done ♡", "learning off": "learning is off"}
+            "finished": "all done ♡", "learning off": "learning is off",
+            "recorded. press run": "recorded. press play"}
 FOOT = "everything stays on your mac  ·  fn+f9 stops"
 FOOT_LEARN = "learning is on  ·  fn+f7 pauses"
 S = 2  # draw at 2x, then shrink, for smooth edges
@@ -1213,11 +738,28 @@ def open_library(self):
     box = ctk.CTkScrollableFrame(win, fg_color=LAV, corner_radius=18)
     box.pack(fill="both", expand=True, padx=16, pady=(0, 16))
     if not names:
-        ctk.CTkLabel(box, text="nothing saved yet.\ntap the macro").pack(pady=16)
-    for name in names:
-        ctk.CTkButton(box, text=name, command=lambda n=name: self.load_macro(n)).pack(fill="x", pady=4)
-        
-    if __name__ == "__main__":
-        app = App()
-        app.strict_var = tk.BooleanVar(value=app.cfg.get("strict", False))
-        app.mainloop()
+        ctk.CTkLabel(box, text="nothing saved yet.\ntap the macro name to save one.",
+                     font=fnt(11), text_color=MUTE).pack(pady=24)
+    for n in names:
+        row = ctk.CTkFrame(box, fg_color="transparent")
+        row.pack(fill="x", pady=3)
+        ctk.CTkButton(row, text=n.lower(), anchor="w", font=fnt(12), fg_color=WHITE, hover_color="#FBEFF3",
+                      text_color=INK, corner_radius=14,
+                      command=lambda n=n: (self.load_named(n), win.destroy())).pack(side="left", fill="x", expand=True)
+        ctk.CTkButton(row, text="✕", width=32, font=fnt(12, True), fg_color="transparent", hover_color="#FBEFF3",
+                      text_color=MUTE, command=lambda n=n: (self.delete_named(n), win.destroy())).pack(side="left", padx=(6, 0))
+
+
+# =====================================================================================
+# Apply everything to the app
+# =====================================================================================
+for _fn in (_begin_record, _watch, grab_crop, on_click, get_tpl, match_fast, find, _play, _do, ask_fast,
+            make_fast, learn_on, learn_off, _learn_key, _learn_moved, _learn_watch, _learn_click, _learn_save,
+            toggle_learn, delete_learned, save_strict, settings_menu, _build, _zone, _tick, _pill_style,
+            set_status, refresh_lcd, update_count, refresh_buttons, open_library):
+    setattr(App, _fn.__name__, _fn)
+App.__init__ = _init
+
+
+if __name__ == "__main__":
+    App().mainloop()
