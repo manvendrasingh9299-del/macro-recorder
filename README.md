@@ -112,7 +112,12 @@ Smart replay with Claude makes API calls that cost money.
 
 Pick **MY MODEL**. The app creates `my_model.py` in its folder with one function:
 
-
+```python
+def find(crop, screen, hint):
+    # crop, screen: PIL RGB images. hint: (x, y) where the target was when recorded.
+    # Return (x, y) of the target in screen pixels, or None.
+    return None
+```
 
 Warning: this file runs as normal Python code. Only use code you trust.
 
