@@ -969,6 +969,252 @@ def open_library(self):
 for fn in (_build, _tick, _pill_style, set_status, refresh_lcd, update_count, refresh_buttons, open_library):
     setattr(App, fn.__name__, fn)
     
+    # ---------- clean soft UI (keep ABOVE: if __name__ == "__main__":) ----------
+import math, random
+from PIL import Image, ImageDraw, ImageFilter
+
+ctk = mr.ctk
+FONT = "Avenir Next"     # try "Helvetica Neue" or "Noteworthy" if you prefer
+INK, MUTE, LAV, WHITE = "#4A4458", "#857D98", "#F4EFF9", "#FFFFFF"
+CREAM, ORANGE, PATCH, PINK, EDGE = "#FFF6EA", "#F3B27A", "#8A6A58", "#F4A7B0", "#EBDDCB"
+PILLS = {"ready": ("#E7F4E4", "#7CC68C"), "rec": ("#FDE6EC", "#EE7E9E"), "play": ("#E4EEFB", "#6B9BE8")}
+FRIENDLY = {"ready": "ready when you are", "stopped": "stopped. everything is safe",
+            "finished": "all done ♡", "learning off": "learning is off"}
+FOOT = "everything stays on your mac  ·  fn+f9 stops"
+FOOT_LEARN = "learning is on  ·  fn+f7 pauses"
+S = 2  # draw at 2x, then shrink, for smooth edges
+
+
+def fnt(size, bold=False):
+    return (FONT, size, "bold" if bold else "normal")
+
+
+def make_bg(W=400, H=700):
+    w, h, rnd = W * S, H * S, random.Random(7)
+    im = Image.new("RGB", (w, h))
+    d = ImageDraw.Draw(im)
+    top = 250 * S
+    for y in range(h):
+        c = (mr.lerp("#63A4A8", "#4C8E94", y / top) if y < top
+             else mr.lerp("#8DBB5A", "#A9D26C", (y - top) / (h - top)))
+        d.line([(0, y), (w, y)], fill=c)
+    for x in range(0, w, 30 * S):
+        d.rectangle([x, 0, x + 2 * S, top], fill="#58989C")
+    for y in (70, 190):
+        d.rectangle([0, y * S, w, (y + 6) * S], fill="#478B91")
+    for cx, cy, r, c in ((20, 10, 70, "#79A94B"), (385, 0, 80, "#86B455"), (200, -25, 45, "#8DBB5E")):
+        d.ellipse([(cx - r) * S, (cy - r) * S, (cx + r) * S, (cy + r) * S], fill=c)
+    im = im.filter(ImageFilter.GaussianBlur(2 * S))
+    d = ImageDraw.Draw(im)
+    for _ in range(26):  # daisies
+        x, y = rnd.randint(0, W), rnd.randint(262, H)
+        r = 4 + 7 * (y - 262) / (H - 262)
+        for k in range(8):
+            a = k * math.pi / 4
+            px, py = x + math.cos(a) * r, y + math.sin(a) * r
+            d.ellipse([(px - r * .55) * S, (py - r * .55) * S, (px + r * .55) * S, (py + r * .55) * S], fill="#FFFFFF")
+        d.ellipse([(x - r * .45) * S, (y - r * .45) * S, (x + r * .45) * S, (y + r * .45) * S], fill="#F6C945")
+    shade = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(shade).rounded_rectangle([24 * S, 98 * S, 376 * S, 672 * S], 40 * S, fill=70)
+    im.paste((50, 70, 50), (0, 0, w, h), shade.filter(ImageFilter.GaussianBlur(14 * S)))
+    d = ImageDraw.Draw(im)
+    d.rounded_rectangle([24 * S, 90 * S, 376 * S, 664 * S], 40 * S, fill=WHITE)   # the card
+    for cx in (98, 200, 302):                                                    # stat chips
+        d.rounded_rectangle([(cx - 46) * S, 418 * S, (cx + 46) * S, 474 * S], 18 * S, fill=LAV)
+    return im.resize((W, H), Image.Resampling.LANCZOS)
+
+
+def make_pill(bg, dot):
+    im = Image.new("RGB", (296 * S, 36 * S), WHITE)
+    d = ImageDraw.Draw(im)
+    d.rounded_rectangle([0, 0, 296 * S - 1, 36 * S - 1], 18 * S, fill=bg)
+    d.ellipse([16 * S, 13 * S, 26 * S, 23 * S], fill=dot)
+    return im.resize((296, 36), Image.Resampling.LANCZOS)
+
+
+def bloom(cv, x, y):
+    for dx, dy in ((-3, 0), (3, 0), (0, -3), (0, 3)):
+        cv.create_oval(x + dx - 2.6, y + dy - 2.6, x + dx + 2.6, y + dy + 2.6, fill="#FFD76E", outline="", tags="cat")
+    cv.create_oval(x - 1.8, y - 1.8, x + 1.8, y + 1.8, fill="#F4A33B", outline="", tags="cat")
+
+
+def draw_cat(cv, x, y, blink, tail):
+    cv.delete("cat")
+
+    def o(a, b, c, d, col):
+        cv.create_oval(x + a, y + b, x + c, y + d, fill=col, tags="cat", width=1.5,
+                       outline=EDGE if col == CREAM else "")
+
+    cv.create_line(x + 26, y + 42, x + 46 + tail, y + 38, x + 50 + tail, y + 20, smooth=True,
+                   width=9, capstyle="round", fill=ORANGE, tags="cat")
+    o(-30, 8, 30, 54, CREAM)
+    o(-24, 14, -6, 40, ORANGE)
+    o(-21, 46, -5, 58, CREAM)
+    o(5, 46, 21, 58, CREAM)
+    for s in (-1, 1):
+        cv.create_polygon(x + s * 27, y - 10, x + s * 25, y - 46, x + s * 6, y - 27, fill=CREAM, outline=EDGE, width=1.5, tags="cat")
+        cv.create_polygon(x + s * 23, y - 16, x + s * 22, y - 38, x + s * 10, y - 27, fill=PINK, outline="", tags="cat")
+    o(-27, -32, 27, 16, CREAM)
+    o(-24, -29, -5, -10, ORANGE)
+    o(8, -29, 24, -15, PATCH)
+    for ex in (-12, 12):
+        if blink:
+            cv.create_line(x + ex - 4, y - 4, x + ex + 4, y - 4, width=2, capstyle="round", fill=INK, tags="cat")
+        else:
+            o(ex - 3.5, -8, ex + 3.5, -1, INK)
+            o(ex - 1.8, -7, ex - .2, -5.4, WHITE)
+    o(-24, 1, -14, 8, "#FBD0DA")
+    o(14, 1, 24, 8, "#FBD0DA")
+    o(-2.5, 1, 2.5, 5, PINK)
+    cv.create_line(x - 5, y + 7, x, y + 10, x + 5, y + 7, smooth=True, width=1.5, fill=INK, tags="cat")
+    for bx, by in ((-15, -31), (0, -35), (15, -31)):
+        bloom(cv, x + bx, y + by)
+
+
+class _BrainBtn:
+    """Lets the existing brain-cycling code keep calling .configure(text=...)."""
+    def __init__(self, btn):
+        self.btn = btn
+
+    def configure(self, **kw):
+        if "text" in kw:
+            self.btn.configure(text="brain: " + kw["text"].lower())
+
+
+def _build(self):
+    ctk.set_appearance_mode("light")
+    self.title("Macro Recorder")
+    self.geometry("400x700")
+    self.configure(fg_color="#8DBB5A")
+    cv = self.cv = tk.Canvas(self, width=400, height=700, highlightthickness=0, bd=0)
+    cv.place(x=0, y=0)
+    self.bg_img = mr.to_photo(make_bg())
+    cv.create_image(0, 0, anchor="nw", image=self.bg_img)
+    self.pill_img = {k: mr.to_photo(make_pill(*v)) for k, v in PILLS.items()}
+
+    def btn(text, cmd, w, h, fg, hover, size, x, y):
+        b = ctk.CTkButton(cv, text=text, command=cmd, width=w, height=h, corner_radius=h // 2,
+                          fg_color=fg, hover_color=hover, text_color=INK, text_color_disabled="#B9B2C4",
+                          font=fnt(size, True), bg_color=WHITE, border_width=0)
+        cv.create_window(x, y, window=b)
+        return b
+
+    btn("⚙", self.settings_menu, 32, 32, LAV, "#EBE3F4", 14, 346, 118)
+    btn("i", lambda: self.set_status(None, "hold fn: f8 stops rec, f9 stops, f10 plays"),
+        32, 32, LAV, "#EBE3F4", 13, 306, 118)
+
+    cv.create_text(200, 240, text="macro recorder", fill=INK, font=fnt(22, True))
+    cv.create_text(200, 264, text="record once  ·  replay anytime", fill=MUTE, font=fnt(11))
+
+    cv.create_image(52, 288, anchor="nw", image=self.pill_img["ready"], tags="pill")
+    cv.create_text(90, 306, text="ready when you are", anchor="w", fill=INK, font=fnt(12), width=240, tags="status")
+    cv.create_line(70, 338, 330, 338, width=6, capstyle="round", fill="#EEE9F4")
+    self.prog_line = cv.create_line(70, 338, 70, 338, width=6, capstyle="round", fill="#EE9DB5", state="hidden")
+
+    self.btn_rec = btn("● record", self.toggle_record, 140, 48, "#F7B6C8", "#F2A2B9", 14, 124, 380)
+    self.btn_act = btn("▶ play", self.toggle_play, 140, 48, "#BFE3C6", "#A6D6B0", 14, 276, 380)
+
+    for cx, label, tag in ((98, "steps", "c_steps_v"), (200, "repeat · tap", "c_rep_v"), (302, "speed · tap", "c_spd_v")):
+        cv.create_text(cx, 433, text=label, fill=MUTE, font=fnt(9))
+        cv.create_text(cx, 456, text="", fill=INK, font=fnt(15, True), tags=tag)
+    cv.create_text(200, 492, text="", fill=MUTE, font=fnt(12), tags="name")
+
+    self.smart = ctk.CTkSwitch(cv, text="smart replay", font=fnt(12, True), text_color=INK,
+                               progress_color="#EE9DB5", button_color=WHITE, button_hover_color="#FBEFF3",
+                               fg_color="#DCD6E6", bg_color=WHITE)
+    self.smart.select()
+    cv.create_window(200, 528, window=self.smart)
+    cv.create_text(200, 551, text="finds buttons even if windows move", fill=MUTE, font=fnt(10))
+
+    btn("macros ▾", self.open_library, 140, 34, LAV, "#EBE3F4", 12, 124, 592)
+    self.lbl_brain = _BrainBtn(btn("brain: local", self.cycle_brain, 140, 34, LAV, "#EBE3F4", 12, 276, 592))
+
+    cv.create_text(200, 636, text=FOOT, fill=MUTE, font=fnt(10), tags="foot")
+    cv.bind("<Motion>", lambda e: cv.config(cursor="hand2" if self._zone(e.x, e.y) else ""))
+    cv.bind("<Button-1>", lambda e: (self._zone(e.x, e.y) or (lambda: None))())
+    self._foot = FOOT
+
+
+def _zone(self, x, y):
+    if 418 <= y <= 474:
+        if 154 <= x <= 246:
+            return self.cycle_repeat
+        if 256 <= x <= 348:
+            return self.cycle_speed
+    if 480 <= y <= 504 and 110 <= x <= 290:
+        return self.save
+    return None
+
+
+def _tick(self):
+    self.anim += 1
+    a, x, y = self.anim, 200, 160
+    if self.recording:
+        x += 4 * math.sin(a / 4)
+    elif self.playing:
+        y -= abs(math.sin(a / 2)) * 7
+    elif a % 20 < 10:
+        y += 1
+    draw_cat(self.cv, x, y, a % 26 < 2, 3 * math.sin(a / 5))
+    if self.playing:
+        p = min(1.0, getattr(self, "idx", 0) / max(1, len(self.events)))
+        self.cv.coords(self.prog_line, 70, 338, 70 + 260 * p, 338)
+        self.cv.itemconfigure(self.prog_line, state="normal")
+    else:
+        self.cv.itemconfigure(self.prog_line, state="hidden")
+    foot = FOOT_LEARN if getattr(self, "learning", False) else FOOT
+    if foot != self._foot:
+        self._foot = foot
+        self.cv.itemconfigure("foot", text=foot)
+    self.after(150, self._tick)
+
+
+def _pill_style(self):
+    k = "rec" if self.recording else ("play" if self.playing else "ready")
+    self.cv.itemconfigure("pill", image=self.pill_img[k])
+
+
+def set_status(self, color, text):
+    t = text.lower().strip()
+    self.cv.itemconfigure("status", text=FRIENDLY.get(t, t))
+    self._pill_style()
+
+
+def refresh_lcd(self):
+    self.cv.itemconfigure("name", text=f"{self.macro_name.lower()}  ✎")
+    self.cv.itemconfigure("c_steps_v", text=str(self.nsteps))
+    self.cv.itemconfigure("c_rep_v", text=f"×{self.repeat_n}")
+    self.cv.itemconfigure("c_spd_v", text=f"{self.speed_v:g}×")
+
+
+def update_count(self):
+    self.nsteps = sum(1 for e in self.events if e["type"] in ("click", "key") and e["pressed"])
+    self.cv.itemconfigure("c_steps_v", text=str(self.nsteps))
+
+
+def refresh_buttons(self):
+    self.btn_rec.configure(text="■ stop" if self.recording else "● record",
+                           fg_color="#F28DA6" if self.recording else "#F7B6C8",
+                           state="disabled" if self.playing else "normal")
+    self.btn_act.configure(text="■ stop" if self.playing else "▶ play",
+                           fg_color="#8FD0A0" if self.playing else "#BFE3C6",
+                           state="disabled" if self.recording else "normal")
+    self._pill_style()
+
+
+def open_library(self):
+    names = sorted(p.stem for p in mr.MACRO_DIR.glob("*.json"))
+    win = ctk.CTkToplevel(self)
+    win.title("my macros")
+    win.geometry("320x400")
+    win.configure(fg_color=WHITE)
+    win.after(100, win.lift)
+    ctk.CTkLabel(win, text="my macros ♡", font=fnt(16, True), text_color=INK).pack(pady=(16, 8))
+    box = ctk.CTkScrollableFrame(win, fg_color=LAV, corner_radius=18)
+    box.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+    if not names:
+        ctk.CTkLabel(box, text="nothing saved yet.\ntap the macro
+                     
 if __name__ == "__main__":
     app = App()
     app.strict_var = tk.BooleanVar(value=app.cfg.get("strict", False))
