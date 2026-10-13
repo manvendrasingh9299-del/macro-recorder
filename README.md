@@ -9,19 +9,6 @@ work so you can train your own model later.
 
 ## Features
 
-- **Record and replay** clicks, double-clicks, scrolls, and keys.
-- **Smart replay**: finds each button on screen using free OpenCV matching.
-- **Brains** (tap the brain pill to switch):
-  - **LOCAL**: free and fast, no AI.
-  - **CLAUDE**: asks Claude if local matching fails (needs an API key).
-  - **OLLAMA**: asks a small local vision model (starts `ollama serve` for you).
-  - **MY MODEL**: your own model, loaded from `my_model.py`.
-- **Learn once, then run fast**: after a run, answer "Was it right?". On Yes, the macro is
-  saved as a FAST version that searches near the last known spot and skips long pauses.
-- **Learn from my day** (optional): saves screenshots and click positions while you work,
-  as training data for your own model.
-- **Retro handheld UI** with an animated pixel cat.
-- **Library**: save, load, and delete macros by name.
 
 ## Install
 
