@@ -1,8 +1,10 @@
 """
-ui_glass.py - clean interface for Macro Recorder, built from native controls (crisp on Retina).
-Loaded by run.py (one import line). Plain words, no emoji.
+ui_glass.py - technical-drawing interface for Macro Recorder.
+White paper, navy hairlines, orange accents, italic labels. Plain words, no emoji.
+Loaded by run.py (one import line).
 """
 import math
+import random
 import tkinter as tk
 import tkinter.font as tkfont
 
@@ -10,11 +12,8 @@ import macro_recorder as mr
 from macro_recorder import App
 
 ctk = mr.ctk
-BG, WHITE, DARK, MUTED = "#E5EADF", "#FFFFFF", "#1D2E16", "#7A8574"
-GREEN, TRACK, DISC = "#5B8A4D", "#7FA672", "#4B7A41"
-CHIP, CHIP_HOVER = "#F2F5EE", "#E6ECDE"
-LAV, MINT, PEACH, ROSE = "#DCD6F6", "#CFE8D5", "#F8DCC8", "#F8CFD9"
-RC, RR = 95, 76   # ring centre and radius
+PAPER, NAVY, ORANGE = "#FFFFFF", "#2B3590", "#E8552B"
+SOFT, FAINT = "#8E96D4", "#BCC1E8"
 
 
 def plain(t):
@@ -35,168 +34,218 @@ def plain(t):
     return t[:1].upper() + t[1:]
 
 
+# ---------- drawing helpers ----------
+def line(cv, *pts, color=NAVY, width=1, dash=None, smooth=False, tags=()):
+    return cv.create_line(*pts, fill=color, width=width, dash=dash, smooth=smooth, tags=tags)
+
+
+def box(cv, x0, y0, x1, y1, color=NAVY, dash=None, fill="", tags=()):
+    return cv.create_rectangle(x0 + .5, y0 + .5, x1 + .5, y1 + .5, outline=color, dash=dash, fill=fill, tags=tags)
+
+
+def cross(cv, x, y, r=9):
+    line(cv, x - r, y, x + r, y, color=ORANGE, width=2)
+    line(cv, x, y - r, x, y + r, color=ORANGE, width=2)
+
+
+def terrain(cv):
+    """Contour lines, a dashed ridge and a dotted ground, like the reference."""
+    rnd = random.Random(5)
+    top = lambda x: 652 + 9 * math.sin(x / 38) + 5 * math.sin(x / 13 + 1)
+    for k in range(5):
+        pts = []
+        for x in range(-10, 420, 18):
+            pts += [x, top(x) - 6 + k * 7 + 4 * math.sin(x / 55 + k)]
+        line(cv, *pts, color=FAINT, smooth=True)
+    pts = []
+    for x in range(-10, 420, 12):
+        pts += [x, top(x) - 12]
+    line(cv, *pts, color=NAVY, dash=(5, 3), smooth=True)
+    for x in range(0, 400, 5):
+        for y in range(int(top(x)) + 14, 704, 5):
+            if rnd.random() < .6:
+                cv.create_oval(x - .8, y - .8, x + .8, y + .8, fill=SOFT, outline="")
+
+
+def person(cv, x, y, s=1.0):
+    pts = [(-8, 13), (8, 13), (10, 38), (6, 38), (5, 62), (1, 62), (0, 42), (-1, 62), (-5, 62), (-6, 38), (-10, 38)]
+    cv.create_polygon([c for px, py in pts for c in (x + px * s, y + py * s)], fill=ORANGE, outline="")
+    cv.create_oval(x - 5 * s, y + 1 * s, x + 5 * s, y + 11 * s, fill=ORANGE, outline="")
+
+
+class _Toggle:
+    """Stands in for the old switch: .get() / .select() / .deselect()."""
+    def __init__(self, app):
+        self.app, self.on = app, True
+
+    def get(self):
+        return self.on
+
+    def set(self, v):
+        self.on = bool(v)
+        cv = self.app.cv
+        if self.on:
+            cv.coords("tog_knob", 332, 567, 350, 587)
+            cv.itemconfigure("tog_knob", fill=ORANGE, outline=ORANGE)
+        else:
+            cv.coords("tog_knob", 302, 567, 320, 587)
+            cv.itemconfigure("tog_knob", fill=PAPER, outline=NAVY)
+
+    select = lambda self: self.set(True)
+    deselect = lambda self: self.set(False)
+
+
 class _BrainBtn:
     """Lets the existing brain-cycling code keep calling .configure(text=...)."""
-    def __init__(self, btn):
-        self.btn = btn
+    def __init__(self, app):
+        self.app = app
 
     def configure(self, **kw):
         if "text" in kw:
-            self.btn.configure(text=kw["text"].title())
+            self.app.cv.itemconfigure("txt_method", text=kw["text"].title())
 
 
 def _build(self):
-    ctk.set_appearance_mode("light")
     fams = set(tkfont.families(self))
-    self.fam = fam = next((f for f in ("Avenir Next", "Helvetica Neue", "Helvetica") if f in fams), "Helvetica")
-    F = lambda size, bold=False: ctk.CTkFont(family=fam, size=size, weight="bold" if bold else "normal")
+    self.fam = fam = next((f for f in ("Futura", "Avenir Next", "Helvetica Neue", "Helvetica") if f in fams), "Helvetica")
+    T = lambda size, style="normal": (fam, size, style)
     self.title("Macro Recorder")
     self.geometry("400x704")
-    self.configure(fg_color=BG)
+    self.configure(fg_color=PAPER)
+    cv = self.cv = tk.Canvas(self, width=400, height=704, bg=PAPER, highlightthickness=0, bd=0)
+    cv.place(x=0, y=0)
+    terrain(cv)
+    person(cv, 338, 628)
 
-    # hero card
-    hero = ctk.CTkFrame(self, fg_color=GREEN, corner_radius=32)
-    hero.pack(fill="x", padx=20, pady=(20, 12))
-    top = ctk.CTkFrame(hero, fg_color="transparent")
-    top.pack(fill="x", padx=24, pady=(20, 0))
-    names = ctk.CTkFrame(top, fg_color="transparent")
-    names.pack(side="left")
-    ctk.CTkLabel(names, text="Macro Recorder", font=F(15, True), text_color="#FFFFFF").pack(anchor="w")
-    self.status = ctk.CTkLabel(names, text="Ready", font=F(11), text_color="#E3EEDA", anchor="nw",
-                               justify="left", wraplength=200, width=200, height=34)
-    self.status.pack(anchor="w", pady=(2, 0))
-    ctk.CTkButton(top, text="Settings", width=84, height=30, corner_radius=15, font=F(11, True),
-                  fg_color="#7BA26D", hover_color="#6E9660", text_color="#FFFFFF",
-                  command=self.settings_menu).pack(side="right", anchor="n")
+    # header
+    cv.create_text(28, 38, anchor="w", text="Macro Recorder", fill=NAVY, font=T(17, "bold"))
+    cv.create_text(28, 60, anchor="w", text="Record once. Replay anytime.", fill=ORANGE, font=T(10, "italic"))
+    box(cv, 290, 26, 372, 54)
+    cv.create_text(331, 40, text="Settings", fill=NAVY, font=T(11))
 
-    cv = self.ring = tk.Canvas(hero, width=190, height=190, bg=GREEN, highlightthickness=0, bd=0)
-    cv.pack(pady=(2, 6))
-    cv.create_oval(RC - RR, RC - RR, RC + RR, RC + RR, outline=TRACK, width=9)
-    cv.create_arc(RC - RR, RC - RR, RC + RR, RC + RR, start=90, extent=-359.9, style="arc",
-                  outline="#CFE3BF", width=9, tags="arc")
-    cv.create_oval(0, 0, 0, 0, fill="#FFFFFF", outline="", state="hidden", tags="dot")
-    cv.create_oval(RC - 58, RC - 58, RC + 58, RC + 58, fill=DISC, outline="")
-    cv.create_text(RC, RC - 8, text="0", fill="#FFFFFF", font=(fam, 34, "bold"), tags="num")
-    cv.create_text(RC, RC + 26, text="steps", fill="#D7E6CB", font=(fam, 11))
+    # main frame with crosshair corners
+    box(cv, 40, 96, 360, 330, dash=(6, 4))
+    for x, y in ((40, 96), (360, 96), (40, 330), (360, 330)):
+        cross(cv, x + .5, y + .5)
+    cv.create_text(58, 118, anchor="w", text="Ready", fill=ORANGE, font=T(12, "italic"), width=270, tags="status")
+    cx, cy, R = 200, 214, 62
+    self.ring = (cx, cy, R)
+    cv.create_oval(cx - R, cy - R, cx + R, cy + R, outline=NAVY, dash=(2, 4))
+    cv.create_arc(cx - R, cy - R, cx + R, cy + R, start=90, extent=-80, style="arc", outline=ORANGE,
+                  width=5, state="hidden", tags="arc")
+    cv.create_oval(0, 0, 0, 0, fill=ORANGE, outline="", state="hidden", tags="dot")
+    cv.create_text(cx, cy - 6, text="0", fill=NAVY, font=T(36), tags="num")
+    cv.create_text(cx, cy + 28, text="steps", fill=ORANGE, font=T(11, "italic"))
 
-    row = ctk.CTkFrame(hero, fg_color="transparent")
-    row.pack(fill="x", padx=24, pady=(4, 22))
-    row.columnconfigure((0, 1), weight=1, uniform="b")
-    self.btn_rec = ctk.CTkButton(row, text="Record", height=46, corner_radius=23, font=F(13, True),
-                                 fg_color="#FFFFFF", hover_color="#EEF3E8", text_color=DARK,
-                                 text_color_disabled="#A9B7A0", command=self.toggle_record)
-    self.btn_rec.grid(row=0, column=0, sticky="ew", padx=(0, 6))
-    self.btn_act = ctk.CTkButton(row, text="Play", height=46, corner_radius=23, font=F(13, True),
-                                 fg_color="#1F3B14", hover_color="#2B4F1D", text_color="#FFFFFF",
-                                 text_color_disabled="#7E9876", command=self.toggle_play)
-    self.btn_act.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+    # record + play
+    cv.create_rectangle(40, 350, 196, 394, fill=ORANGE, outline=ORANGE, tags="r_rec")
+    cv.create_text(118, 372, text="Record", fill="#FFFFFF", font=T(13, "bold"), tags="t_rec")
+    cv.create_rectangle(204.5, 350.5, 360.5, 394.5, fill=PAPER, outline=NAVY, tags="r_act")
+    cv.create_text(282, 372, text="Play", fill=NAVY, font=T(13, "bold"), tags="t_act")
 
-    # repeat + speed
-    row2 = ctk.CTkFrame(self, fg_color="transparent")
-    row2.pack(fill="x", padx=20, pady=(0, 12))
-    row2.columnconfigure((0, 1), weight=1, uniform="c")
-
-    def chip_card(col, label, cmd):
-        f = ctk.CTkFrame(row2, fg_color=WHITE, corner_radius=24)
-        f.grid(row=0, column=col, sticky="ew", padx=(0, 6) if col == 0 else (6, 0))
-        ctk.CTkLabel(f, text=label, font=F(11), text_color=MUTED, anchor="w").pack(anchor="w", padx=20, pady=(14, 4))
-        b = ctk.CTkButton(f, text="", height=36, corner_radius=18, font=F(14, True), fg_color=CHIP,
-                          hover_color=CHIP_HOVER, text_color=DARK, command=cmd)
-        b.pack(fill="x", padx=14, pady=(0, 14))
-        return b
-
-    self.btn_rep = chip_card(0, "Repeat", self.cycle_repeat)
-    self.btn_spd = chip_card(1, "Speed", self.cycle_speed)
+    # repeat / speed / method
+    box(cv, 40, 420, 360, 470)
+    line(cv, 146.5, 420, 146.5, 470)
+    line(cv, 253.5, 420, 253.5, 470)
+    for x, label, tag in ((93, "Repeat", "v_rep"), (200, "Speed", "v_spd"), (307, "Method", "txt_method")):
+        cv.create_text(x, 433, text=label, fill=ORANGE, font=T(10, "italic"))
+        cv.create_text(x, 454, text="", fill=NAVY, font=T(14, "bold"), tags=tag)
 
     # macro
-    mac = ctk.CTkFrame(self, fg_color=WHITE, corner_radius=24)
-    mac.pack(fill="x", padx=20, pady=(0, 12))
-    left = ctk.CTkFrame(mac, fg_color="transparent")
-    left.pack(side="left", padx=(20, 0), pady=16)
-    ctk.CTkLabel(left, text="Macro", font=F(11), text_color=MUTED, anchor="w").pack(anchor="w")
-    self.lbl_name = ctk.CTkLabel(left, text="Untitled", font=F(16, True), text_color=DARK, anchor="w", width=130)
-    self.lbl_name.pack(anchor="w")
-    btns = ctk.CTkFrame(mac, fg_color="transparent")
-    btns.pack(side="right", padx=(0, 16))
-    for text, cmd, fg, hv in (("Save", self.save, LAV, "#CFC8F0"), ("Open", self.open_library, MINT, "#BEDCC6")):
-        ctk.CTkButton(btns, text=text, width=64, height=34, corner_radius=17, font=F(12, True), fg_color=fg,
-                      hover_color=hv, text_color=DARK, command=cmd).pack(side="left", padx=(6, 0))
+    box(cv, 40, 486, 360, 536)
+    cv.create_text(54, 502, anchor="w", text="Macro", fill=ORANGE, font=T(10, "italic"))
+    cv.create_text(54, 522, anchor="w", text="", fill=NAVY, font=T(15, "bold"), tags="name")
+    for x0, label in ((226, "Save"), (292, "Open")):
+        box(cv, x0, 498, x0 + 60, 524)
+        cv.create_text(x0 + 30, 511, text=label, fill=NAVY, font=T(11))
 
-    # smart replay + method
-    sm = ctk.CTkFrame(self, fg_color=WHITE, corner_radius=24)
-    sm.pack(fill="x", padx=20, pady=(0, 20))
-    r1 = ctk.CTkFrame(sm, fg_color="transparent")
-    r1.pack(fill="x", padx=20, pady=(16, 0))
-    txt = ctk.CTkFrame(r1, fg_color="transparent")
-    txt.pack(side="left")
-    ctk.CTkLabel(txt, text="Smart replay", font=F(14, True), text_color=DARK, anchor="w").pack(anchor="w")
-    ctk.CTkLabel(txt, text="Finds buttons even if windows move", font=F(10), text_color=MUTED,
-                 anchor="w").pack(anchor="w")
-    self.smart = ctk.CTkSwitch(r1, text="", width=50, switch_width=48, switch_height=26,
-                               progress_color="#7DB88A", button_color="#FFFFFF",
-                               button_hover_color="#F3F6EF", fg_color="#D5DBCF")
-    self.smart.select()
-    self.smart.pack(side="right")
-    ctk.CTkFrame(sm, height=1, corner_radius=0, fg_color="#EDF0E8").pack(fill="x", padx=20, pady=12)
-    r2 = ctk.CTkFrame(sm, fg_color="transparent")
-    r2.pack(fill="x", padx=20, pady=(0, 16))
-    ctk.CTkLabel(r2, text="Method", font=F(12, True), text_color=DARK).pack(side="left")
-    self.btn_method = ctk.CTkButton(r2, text="Local", width=92, height=32, corner_radius=16, font=F(12, True),
-                                    fg_color=PEACH, hover_color="#F0CDB5", text_color=DARK, command=self.cycle_brain)
-    self.btn_method.pack(side="right")
-    self.lbl_brain = _BrainBtn(self.btn_method)
+    # smart replay
+    box(cv, 40, 552, 360, 602)
+    cv.create_text(54, 569, anchor="w", text="Smart replay", fill=NAVY, font=T(13, "bold"))
+    cv.create_text(54, 588, anchor="w", text="Finds buttons even if windows move", fill=ORANGE, font=T(9, "italic"))
+    box(cv, 300, 565, 352, 589)
+    cv.create_rectangle(332, 567, 350, 587, fill=ORANGE, outline=ORANGE, tags="tog_knob")
+
+    self.smart = _Toggle(self)
+    self.lbl_brain = _BrainBtn(self)
+    self.zones = [(290, 26, 372, 54, "set"), (40, 350, 196, 394, "rec"), (204, 350, 360, 394, "act"),
+                  (40, 420, 146, 470, "rep"), (147, 420, 253, 470, "spd"), (254, 420, 360, 470, "method"),
+                  (226, 498, 286, 524, "save"), (292, 498, 352, 524, "open"), (296, 556, 356, 598, "tog")]
+    self.acts = {"set": self.settings_menu,
+                 "rec": lambda: None if self.playing else self.toggle_record(),
+                 "act": lambda: None if self.recording else self.toggle_play(),
+                 "rep": self.cycle_repeat, "spd": self.cycle_speed, "method": self.cycle_brain,
+                 "save": self.save, "open": self.open_library,
+                 "tog": lambda: self.smart.set(not self.smart.get())}
+    cv.bind("<Motion>", lambda e: cv.config(cursor="pointinghand" if self._zone(e.x, e.y) else ""))
+    cv.bind("<Button-1>", lambda e: (lambda f: f and f())(self._zone(e.x, e.y)))
+
+
+def _zone(self, x, y):
+    for x0, y0, x1, y1, key in self.zones:
+        if x0 <= x <= x1 and y0 <= y <= y1:
+            return self.acts[key]
+    return None
 
 
 def _tick(self):
     self.anim += 1
-    cv = self.ring
+    cx, cy, R = self.ring
+    cv = self.cv
     if self.recording:
-        start, extent, col = (90 - self.anim * 10) % 360, -80, "#FFFFFF"
+        start, extent = (90 - self.anim * 10) % 360, -80
     elif self.playing:
         p = min(1.0, getattr(self, "idx", 0) / max(1, len(self.events)))
-        start, extent, col = 90, -max(3.0, 359.9 * p), "#FFFFFF"
+        start, extent = 90, -max(3.0, 359.9 * p)
     else:
         self.idx = 0
-        start, extent, col = 90, -359.9, "#CFE3BF"
-    cv.itemconfigure("arc", start=start, extent=extent, outline=col)
-    if self.recording or self.playing:
-        ang = math.radians(start + extent)
-        x, y = RC + RR * math.cos(ang), RC - RR * math.sin(ang)
-        cv.coords("dot", x - 6, y - 6, x + 6, y + 6)
-        cv.itemconfigure("dot", state="normal")
-    else:
+        start = None
+    if start is None:
+        cv.itemconfigure("arc", state="hidden")
         cv.itemconfigure("dot", state="hidden")
+    else:
+        cv.itemconfigure("arc", state="normal", start=start, extent=extent)
+        ang = math.radians(start + extent)
+        x, y = cx + R * math.cos(ang), cy - R * math.sin(ang)
+        cv.coords("dot", x - 5, y - 5, x + 5, y + 5)
+        cv.itemconfigure("dot", state="normal")
     self.after(100, self._tick)
 
 
 def set_status(self, color, text):
-    self.status.configure(text=plain(text))
+    self.cv.itemconfigure("status", text=plain(text))
 
 
 def refresh_lcd(self):
-    n = self.repeat_n
-    self.btn_rep.configure(text=f"{n} time" if n == 1 else f"{n} times")
-    self.btn_spd.configure(text=f"{self.speed_v:g}x")
+    n, cv = self.repeat_n, self.cv
+    cv.itemconfigure("v_rep", text=f"{n} time" if n == 1 else f"{n} times")
+    cv.itemconfigure("v_spd", text=f"{self.speed_v:g}x")
     name = "Untitled" if self.macro_name == "UNTITLED" else self.macro_name
-    self.lbl_name.configure(text=name if len(name) <= 14 else name[:13] + "...")
-    self.ring.itemconfigure("num", text=str(self.nsteps))
+    cv.itemconfigure("name", text=name if len(name) <= 13 else name[:12] + "...")
+    cv.itemconfigure("num", text=str(self.nsteps))
 
 
 def update_count(self):
     self.nsteps = sum(1 for e in self.events if e["type"] in ("click", "key") and e["pressed"])
-    self.ring.itemconfigure("num", text=str(self.nsteps))
+    self.cv.itemconfigure("num", text=str(self.nsteps))
 
 
 def refresh_buttons(self):
-    self.btn_rec.configure(text="Stop" if self.recording else "Record",
-                           fg_color=ROSE if self.recording else "#FFFFFF",
-                           hover_color="#F4BFCB" if self.recording else "#EEF3E8",
-                           state="disabled" if self.playing else "normal")
-    self.btn_act.configure(text="Stop" if self.playing else "Play",
-                           fg_color=ROSE if self.playing else "#1F3B14",
-                           hover_color="#F4BFCB" if self.playing else "#2B4F1D",
-                           text_color=DARK if self.playing else "#FFFFFF",
-                           state="disabled" if self.recording else "normal")
+    cv = self.cv
+    if self.recording:
+        cv.itemconfigure("r_rec", fill=PAPER, outline=ORANGE)
+        cv.itemconfigure("t_rec", text="Stop", fill=ORANGE)
+    else:
+        col = FAINT if self.playing else ORANGE
+        cv.itemconfigure("r_rec", fill=col, outline=col)
+        cv.itemconfigure("t_rec", text="Record", fill="#FFFFFF")
+    if self.playing:
+        cv.itemconfigure("r_act", fill=NAVY, outline=NAVY)
+        cv.itemconfigure("t_act", text="Stop", fill="#FFFFFF")
+    else:
+        col = FAINT if self.recording else NAVY
+        cv.itemconfigure("r_act", fill=PAPER, outline=col)
+        cv.itemconfigure("t_act", text="Play", fill=col)
 
 
 def open_library(self):
@@ -204,25 +253,26 @@ def open_library(self):
     win = ctk.CTkToplevel(self)
     win.title("Open macro")
     win.geometry("340x420")
-    win.configure(fg_color=BG)
+    win.configure(fg_color=PAPER)
     win.after(100, win.lift)
-    f = lambda s, b=False: (self.fam, s, "bold" if b else "normal")
-    ctk.CTkLabel(win, text="Open macro", font=f(16, True), text_color=DARK).pack(pady=(18, 10))
-    box = ctk.CTkScrollableFrame(win, fg_color=WHITE, corner_radius=22)
-    box.pack(fill="both", expand=True, padx=18, pady=(0, 18))
+    f = lambda s, st="normal": (self.fam, s, st)
+    ctk.CTkLabel(win, text="Open macro", font=f(16, "bold"), text_color=NAVY).pack(pady=(18, 4))
+    ctk.CTkLabel(win, text="Choose a saved macro", font=f(10, "italic"), text_color=ORANGE).pack(pady=(0, 10))
+    box_ = ctk.CTkScrollableFrame(win, fg_color=PAPER, corner_radius=0, border_width=1, border_color=NAVY)
+    box_.pack(fill="both", expand=True, padx=18, pady=(0, 18))
     if not names:
-        ctk.CTkLabel(box, text="No saved macros yet.\nRecord one, then press Save.",
-                     font=f(11), text_color=MUTED).pack(pady=28)
+        ctk.CTkLabel(box_, text="No saved macros yet.\nRecord one, then press Save.",
+                     font=f(11), text_color=NAVY).pack(pady=28)
     for n in names:
-        r = ctk.CTkFrame(box, fg_color="transparent")
+        r = ctk.CTkFrame(box_, fg_color="transparent")
         r.pack(fill="x", pady=3)
-        ctk.CTkButton(r, text=n, anchor="w", font=f(12), fg_color=CHIP, hover_color=CHIP_HOVER, text_color=DARK,
-                      corner_radius=14, height=34,
+        ctk.CTkButton(r, text=n, anchor="w", font=f(12), fg_color=PAPER, hover_color="#EEF0FA", text_color=NAVY,
+                      border_width=1, border_color=NAVY, corner_radius=0, height=32,
                       command=lambda n=n: (self.load_named(n), win.destroy())).pack(side="left", fill="x", expand=True)
-        ctk.CTkButton(r, text="Delete", width=64, height=34, font=f(11), fg_color="transparent",
-                      hover_color=CHIP, text_color=MUTED,
+        ctk.CTkButton(r, text="Delete", width=64, height=32, font=f(11, "italic"), fg_color="transparent",
+                      hover_color="#EEF0FA", text_color=ORANGE, corner_radius=0,
                       command=lambda n=n: (self.delete_named(n), win.destroy())).pack(side="left", padx=(6, 0))
 
 
-for _fn in (_build, _tick, set_status, refresh_lcd, update_count, refresh_buttons, open_library):
+for _fn in (_build, _zone, _tick, set_status, refresh_lcd, update_count, refresh_buttons, open_library):
     setattr(App, _fn.__name__, _fn)
