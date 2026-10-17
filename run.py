@@ -505,5 +505,8 @@ for _fn in (_begin_record, _watch, grab_crop, on_click, get_tpl, match_fast, fin
 App.__init__ = _init
 
 
+import ui_game  # noqa: E402
+
+
 if __name__ == "__main__":
     App().mainloop()
