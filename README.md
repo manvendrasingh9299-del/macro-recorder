@@ -173,18 +173,8 @@ lists above. If you rebuild, macOS may ask for permissions again.
 | F8 does nothing | Hold Fn, or enable standard function keys. |
 | Ollama gives wrong positions | Use LOCAL or CLAUDE, or try a larger vision model. |
 
-## Limitations
 
-- Main display only.
-- Dragging and modifier-clicks (Cmd-click, Shift-click) are not supported yet.
-- Automating websites can break their terms of service. Use it responsibly.
-- Ollama and "learn" features are lightly tested.
 
-## Roadmap
-
-Step editor, wait-until-it-appears and type-text steps, scheduled runs, API key in the
-macOS Keychain, a first-run permission wizard, and training a small button-finding model
-from collected data.
 
 ## Project structure
 
