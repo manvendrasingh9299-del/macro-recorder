@@ -4,10 +4,11 @@ Record your mouse clicks and keystrokes on a Mac, then replay them with one clic
 Replay can find each button by looking at the screen, so a macro keeps working even when a window has moved.
 
 <p align="center">
-  <img src="docs/main.jpg" alt="Main window" width="300">
+  <img src="assets/main.jpg" alt="Main window" width="500">
   &nbsp;&nbsp;
-  <img src="docs/macros.jpg" alt="Saved macros" width="300">
+  <img src="assets/macros.jpg" alt="Saved macros" width="500">
 </p>
+
 
 ## Features
 
