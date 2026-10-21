@@ -16,3 +16,11 @@ macros/
 build/
 dist/
 *.spec
+.venv/
+__pycache__/
+dist/
+build/
+*.spec
+macros/
+learn/
+macro_data/
