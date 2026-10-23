@@ -100,4 +100,4 @@ pip install pyinstaller
 pyinstaller --noconfirm --windowed --name "Macro Recorder" --collect-all customtkinter --collect-all cv2 run.py
 ```
 
-The app appears in `dist/`. Give `Macro Recorder.app` the three permissions above.
+The app appears in `dist/`. Give `Macro Recorder.app` the three permissions above...
