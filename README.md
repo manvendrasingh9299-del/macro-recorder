@@ -72,6 +72,7 @@ Tap **REPEAT** and **SPEED** on the screen to change them. Turn **Smart replay**
 
 On a MacBook, hold **Fn** with these keys unless you turned on standard function keys.
 
+<<<<<<< HEAD
 ## Brains for Smart replay
 
 | Brain | What it is |
@@ -112,3 +113,7 @@ pyinstaller --noconfirm --windowed --name "Macro Recorder" --collect-all customt
 ```
 
 The app appears in `dist/`. Give `Macro Recorder.app` the three permissions above.
+=======
+</details>
+ghcyugvbv bbhjgv vb
+>>>>>>> e7465da (update)
