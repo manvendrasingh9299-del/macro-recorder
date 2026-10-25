@@ -1,39 +1,28 @@
-# Macro Recorder
+make it better # Macro Recorder
 
-**Record a task once. Replay it any time, even after a window moves.**
-
-Macro Recorder records your mouse clicks and keystrokes on a Mac and replays them with one click. Most macro tools click fixed screen positions, so they break when a window moves. This one finds each button by looking at the screen.
-
-**[Watch the 90-second demo](YOUR-VIDEO-LINK)**
+Record your mouse clicks and keystrokes on a Mac, then replay them with one click.
+Replay can find each button by looking at the screen, so a macro keeps working even when a window has moved.
 
 <p align="center">
-  <img src="assets/main.jpg" alt="Main window" width="300">
-  &nbsp;&nbsp;&nbsp;
-  <img src="assets/macros.jpg" alt="Saved macros" width="300">
+  <img src="assets/main.jpg" width="80%" alt="Main window">
+  <br><br>
+  <img src="assets/macros.jpg" width="80%" alt="Saved macros">
 </p>
-<p align="center"><sub>The main window and your saved macros</sub></p>
 
-## How it works
-
-1. **Record.** For every click, it saves the click position and a small picture of what you clicked.
-2. **Replay.** For every click, it looks for that picture on the current screen (image matching with OpenCV) and clicks where it finds it.
-3. **Back up.** If matching fails, an optional vision model can try. Otherwise it clicks the saved position.
-
-Everything runs on your Mac. No account and no internet are needed for the default mode.
 
 ## Features
 
 - Records clicks (single, double, right), scrolling and keys
-- Repeat from 1 to 100 times, at 0.5x to 3x speed
-- **Smart replay** finds buttons on screen, so moved windows are fine
-- **Fast replay.** After a run, answer "Was it right?". Yes saves a faster version of the macro
+- Replays with a repeat count (1 to 100) and speed (0.5x to 3x)
+- **Smart replay:** finds each button on screen with image matching. It is free and works offline
+- Optional backup when matching fails: a local vision model (Ollama), Claude (needs an API key and internet), or your own model
+- **Fast replay:** after a run, answer "Was it right?". Yes saves a faster version of the macro
 - Save, open and delete macros
-- Optional backups for Smart replay: Ollama (local vision model), Claude (API key), or your own model
-- Optional **Learn from my day**: saves screenshots and click positions on your Mac, so you can train your own model later (off by default)
+- Optional **Learn from my day:** saves screenshots and click positions on your Mac so you can train your own model later (off by default)
 
-## Quick start (macOS)
+## Install (macOS)
 
-You need macOS and Python 3.12 or newer with Tk.
+You need macOS and Python 3.12 or newer with Tk. If you see a `_tkinter` error, run `brew install python-tk@3.12`.
 
 ```bash
 git clone https://github.com/manvendrasingh9299-del/macro-recorder.git
@@ -44,35 +33,34 @@ pip install -r requirements.txt
 python run.py
 ```
 
-### Allow the permissions
+### Permissions
 
 Open **System Settings > Privacy & Security** and turn these on for the app you start from (Terminal or VS Code):
 
-- **Accessibility** (called **Device Control and Data Access** on some versions)
-- **Input Monitoring**
-- **Screen & System Audio Recording**
+- Accessibility (called **Device Control and Data Access** on some versions)
+- Input Monitoring
+- Screen & System Audio Recording
 
 Then quit that app completely (Cmd+Q) and open it again.
 
-## Use it
+## Use
 
-1. Press **REC**, wait 3 seconds, do your task, then press **F8**.
-2. Press **RUN** (or **F10**) and keep your hands off the mouse.
+1. Press **Record**, wait 3 seconds, do your task, then press **F8**.
+2. Press **Play** (or **F10**) and keep your hands off the mouse.
 3. When it finishes, answer **Was it right?**. Yes makes later runs faster.
 4. Tap the macro name to save it. **Macros** opens your saved ones.
 
-Tap **REPEAT** and **SPEED** on the screen to change them. Turn **Smart replay** off to replay exact positions instead.
+Tap **Repeat** and **Speed** to change them. The brain button switches between Local, Claude, Ollama and My model.
 
 | Key | Action |
 |---|---|
 | F8 | Stop recording |
 | F9 | Stop playback |
-| F10 | Run the loaded macro |
+| F10 | Play |
 | F7 | Pause or resume Learn from my day |
 
 On a MacBook, hold **Fn** with these keys unless you turned on standard function keys.
 
-<<<<<<< HEAD
 ## Brains for Smart replay
 
 | Brain | What it is |
@@ -113,7 +101,3 @@ pyinstaller --noconfirm --windowed --name "Macro Recorder" --collect-all customt
 ```
 
 The app appears in `dist/`. Give `Macro Recorder.app` the three permissions above.
-=======
-</details>
-ghcyugvbv bbhjgv vb
->>>>>>> e7465da (update)
