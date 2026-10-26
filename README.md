@@ -1,4 +1,4 @@
-make it # Macro Recorder
+# Macro Recorder
 
 Record your mouse clicks and keystrokes on a Mac, then replay them with one click.
 Replay can find each button by looking at the screen, so a macro keeps working even when a window has moved.
