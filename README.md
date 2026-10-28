@@ -4,8 +4,6 @@
 
 Macro Recorder records your mouse clicks and keystrokes on a Mac and replays them with one click. Most macro tools click fixed screen positions, so they break when a window moves. This one finds each button by looking at the screen.
 
-**[Watch the 90-second demo](YOUR-VIDEO-LINK)**
-
 <p align="center">
   <img src="docs/images/main.jpg" alt="Main window" width="300">
   &nbsp;&nbsp;&nbsp;
