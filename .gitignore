@@ -1,26 +1,15 @@
-# Python
-__pycache__/
-*.pyc
 .venv/
-venv/
-
-# macOS
+__pycache__/
 .DS_Store
-
-# Editor
-.idea/
-
-# Your recorded macros (may contain typed text/passwords)
-macros/
-*.macro.json
 build/
 dist/
 *.spec
-.venv/
-__pycache__/
-dist/
-build/
-*.spec
+
+# private data: never commit
 macros/
 learn/
 macro_data/
+my_model.py
+config.json
+__pycache__/
+*.pyc
