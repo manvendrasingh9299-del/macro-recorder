@@ -1,6 +1,5 @@
 """Where things are saved: settings, macros and learned data."""
 import json
-import os
 from pathlib import Path
 
 APP_DIR = Path.home() / "Library" / "Application Support" / "MacroRecorder"
@@ -34,10 +33,6 @@ def load():
 def save(cfg):
     CONFIG.write_text(json.dumps(cfg))
     CONFIG.chmod(0o600)
-
-
-def api_key(cfg):
-    return os.environ.get("ANTHROPIC_API_KEY") or cfg.get("api_key", "")
 
 
 def macro_names():

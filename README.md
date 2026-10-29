@@ -26,7 +26,7 @@ Everything runs on your Mac. No account and no internet are needed for the defau
 - **Smart replay** finds buttons on screen, so moved windows are fine
 - **Fast replay.** After a run, answer "Was it right?". Yes saves a faster version of the macro
 - Save, open and delete macros
-- Optional backups for Smart replay: Ollama (local vision model), Claude (API key), or your own model
+- Optional backup for Smart replay: your own offline model
 - Optional **Learn from my day**: saves screenshots and click positions on your Mac, so you can train your own model later (off by default)
 
 ## Quick start (macOS)
@@ -76,18 +76,16 @@ Tap the brain button to switch.
 
 | Brain | What it is |
 |---|---|
-| **Local** | Default. Image matching on your Mac. Free and offline |
-| **Ollama** | A small local vision model. Run `ollama pull qwen2.5vl:3b` once. The app starts the server for you |
-| **Claude** | Needs an API key (Settings). Sends screenshots to Anthropic, so it needs internet |
-| **My model** | Your own model. Put a `find(crop, screen, hint)` function in `my_model.py` |
+| **Local** | Default. Image matching on your Mac. Fully offline, no account needed |
+| **My model** | Your own offline model. Put a `find(crop, screen, hint)` function in `my_model.py` |
 
-If a button is not found within 5 seconds, the macro clicks its saved position. Turn on **Stop if target not found** in Settings to stop instead.
+Both options run entirely on your Mac. Nothing is ever sent anywhere. If a button is not found within 5 seconds, the macro clicks its saved position. Turn on **Stop if target not found** in Settings to stop instead.
 
 ## Privacy
 
+- **Fully offline.** No account, no API key, no network calls. Everything runs and stays on your Mac.
 - A macro records everything you type, **including passwords**. Do not record passwords.
-- Everything stays on your Mac, except when you choose the Claude brain.
-- Your data is in `~/Library/Application Support/MacroRecorder/`: `macros/`, `config.json` (settings and API key), `my_model.py`, and `learn/`.
+- Your data is in `~/Library/Application Support/MacroRecorder/`: `macros/`, `config.json` (settings), `my_model.py`, and `learn/`.
 
 ## Project structure
 
@@ -112,7 +110,7 @@ macro-recorder/
 
 - Built and tested on an Apple Silicon Mac. macOS only, main display only.
 - No dragging, and no Cmd or Shift clicks yet.
-- Ollama and Learn from my day have had light testing.
+- Learn from my day has had light testing.
 - Macros recorded with very early versions may click saved positions instead of finding buttons. Record them again.
 
 <details>

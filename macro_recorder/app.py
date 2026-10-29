@@ -19,8 +19,8 @@ STOP_RECORD, STOP_PLAY, RUN = keyboard.Key.f8, keyboard.Key.f9, keyboard.Key.f10
 COUNTDOWN = 3                                   # seconds before recording or playing starts
 WAIT = 5.0                                      # seconds to look for a button before giving up
 REPEATS, SPEEDS = [1, 2, 3, 5, 10, 25, 100], [0.5, 1, 2, 3]
-BRAINS = ["local", "claude", "ollama", "plugin"]
-BRAIN_LABELS = {"local": "LOCAL", "claude": "CLAUDE", "ollama": "OLLAMA", "plugin": "MY MODEL"}
+BRAINS = ["local", "plugin"]
+BRAIN_LABELS = {"local": "LOCAL", "plugin": "MY MODEL"}
 
 
 def fast_delay(ev, gap):
@@ -43,7 +43,6 @@ class App(Screen, ctk.CTk):
         self.sw, self.sh = self.winfo_screenwidth(), self.winfo_screenheight()
 
         self.cfg = settings.load()
-        self.api_key = settings.api_key(self.cfg)
         self.tasks = queue.Queue()                       # lets other threads update the window
         self.events, self.t0, self.cur = [], 0.0, (0, 0)
         self.recording = self.capturing = self.playing = False
@@ -229,11 +228,6 @@ class App(Screen, ctk.CTk):
     def _play(self, repeat, speed):
         fast = bool(self.events) and "fd" in self.events[0]
         self.learned = {}
-        if self.brain == "ollama":
-            self.ui(self.set_status, "Starting Ollama")
-            problem = matching.ensure_ollama(self.cfg.get("ollama_model", matching.OLLAMA_DEFAULT))
-            if problem:
-                self.ui(self.set_status, problem)
         if not self._sleep(1 if fast else COUNTDOWN):
             return self._stopped()
         for n in range(repeat):
@@ -290,10 +284,9 @@ class App(Screen, ctk.CTk):
                 hit = (near and matching.locate(ev, shot, self.sw, near)) or matching.locate(ev, shot, self.sw)
                 if hit:
                     return hit
-                if self.brain in ("claude", "ollama", "plugin") and tries < 2:
+                if self.brain == "plugin" and tries < 1:
                     tries += 1
-                    hit = matching.ask_model(self.brain, ev, shot, self.sw, self.sh,
-                                             self.cfg, self.api_key, self.plugin)
+                    hit = matching.ask_plugin(self.plugin, ev, shot, self.sw, self.sh)
                     if hit:
                         return hit
             except Exception as exc:
@@ -358,34 +351,11 @@ class App(Screen, ctk.CTk):
 
     def cycle_brain(self):
         nxt = BRAINS[(BRAINS.index(self.smart_brain) + 1) % len(BRAINS)]
-        if nxt == "claude" and not self.api_key and not self.ask_key():
-            return
-        if nxt == "ollama" and not self.cfg.get("ollama_model"):
-            self.cfg["ollama_model"] = matching.OLLAMA_DEFAULT
-            settings.save(self.cfg)
         if nxt == "plugin" and not settings.PLUGIN.exists():
             settings.PLUGIN.write_text(settings.PLUGIN_TEMPLATE)
         self.smart_brain = nxt
         self.brain_label.configure(text=BRAIN_LABELS[nxt])
         self.set_status("Edit my_model.py in the folder" if nxt == "plugin" else f"Brain: {BRAIN_LABELS[nxt]}")
-
-    def ask_key(self):
-        key = ctk.CTkInputDialog(text="Paste your Anthropic API key (console.anthropic.com):",
-                                 title="API key").get_input()
-        if key:
-            self.api_key = key.strip()
-            self.cfg["api_key"] = self.api_key
-            settings.save(self.cfg)
-            self.set_status("API key saved")
-        return bool(self.api_key)
-
-    def ask_model(self):
-        name = ctk.CTkInputDialog(text=f"Ollama vision model (default {matching.OLLAMA_DEFAULT}):",
-                                  title="Ollama model").get_input()
-        if name is not None:
-            self.cfg["ollama_model"] = name.strip() or matching.OLLAMA_DEFAULT
-            settings.save(self.cfg)
-            self.set_status(f"Model {self.cfg['ollama_model']}")
 
     def save_strict(self):
         self.cfg["strict"] = self.strict.get()
@@ -423,8 +393,6 @@ class App(Screen, ctk.CTk):
     def settings_menu(self):
         count, gb = self.learner.stats()
         menu = tk.Menu(self, tearoff=0)
-        menu.add_command(label="Anthropic API key...", command=self.ask_key)
-        menu.add_command(label="Ollama model...", command=self.ask_model)
         menu.add_checkbutton(label="Stop if target not found", variable=self.strict, command=self.save_strict)
         menu.add_separator()
         menu.add_checkbutton(label="Learn from my day", variable=self.learn_var, command=self.toggle_learn)

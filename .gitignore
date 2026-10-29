@@ -11,5 +11,3 @@ learn/
 macro_data/
 my_model.py
 config.json
-__pycache__/
-*.pyc
