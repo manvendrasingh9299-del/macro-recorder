@@ -4,6 +4,8 @@
 
 Macro Recorder records your mouse clicks and keystrokes on a Mac and replays them with one click. Most macro tools click fixed screen positions, so they break when a window moves. This one finds each button by looking at the screen.
 
+**100% local. No account, no API key, no internet connection needed, ever.**
+
 <p align="center">
   <img src="docs/images/main.jpg" alt="Main window" width="300">
   &nbsp;&nbsp;&nbsp;
@@ -15,7 +17,7 @@ Macro Recorder records your mouse clicks and keystrokes on a Mac and replays the
 
 1. **Record.** For every click, it saves the click position and a small picture of what you clicked.
 2. **Replay.** For every click, it looks for that picture on the current screen (image matching with OpenCV) and clicks where it finds it.
-3. **Back up.** If matching fails, an optional vision model can try. Otherwise it clicks the saved position.
+3. **Back up.** If matching fails, your own model can try (optional). Otherwise it clicks the saved position.
 
 Everything runs on your Mac. No account and no internet are needed for the default mode.
 
