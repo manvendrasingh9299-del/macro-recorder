@@ -3,3 +3,9 @@ customtkinter>=5.2.2
 Pillow>=10.0
 numpy
 opencv-python-headless
+
+# macOS only (screenshots, clicks, the front app)
+pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"
+pyobjc-framework-Quartz>=10.0; sys_platform == "darwin"
+
+# Windows needs nothing extra: ctypes is part of the Python standard library
