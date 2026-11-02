@@ -9,7 +9,7 @@ from collections import deque
 
 from pynput import keyboard, mouse
 
-from . import macos, settings
+from . import osapi, settings
 from .matching import CROP_POINTS
 
 CAP_GB = 3.0
@@ -73,7 +73,7 @@ class LearnMode:
         while self.active:
             if not self.paused and not self.app.playing and time.time() - self.last_move < 3:
                 try:
-                    self.frames.append((time.time(), macos.grab_screen()))
+                    self.frames.append((time.time(), osapi.grab_screen()))
                 except Exception:
                     pass
             time.sleep(0.3)
@@ -81,7 +81,7 @@ class LearnMode:
     def _on_click(self, x, y, button, pressed):
         if not pressed or self.paused or self.app.playing:
             return
-        now, app_name = time.time(), macos.front_app()
+        now, app_name = time.time(), osapi.front_app()
         if any(s in app_name.lower() for s in SKIP_APPS):
             return
         last_t, last_pos, last_n = self.last_click
@@ -98,9 +98,9 @@ class LearnMode:
             day = settings.LEARN_DIR / datetime.date.today().isoformat()
             day.mkdir(parents=True, exist_ok=True)
             sid = str(int(t * 1000))
-            shot = before or macos.grab_screen()
+            shot = before or osapi.grab_screen()
             time.sleep(0.8)   # let the screen react, then save what the click did
-            after = macos.grab_screen()
+            after = osapi.grab_screen()
             big = shot.resize((1024, round(shot.height * 1024 / shot.width)))
             big.save(day / f"{sid}.jpg", quality=70)
             small = after.resize((512, round(after.height * 512 / after.width)))

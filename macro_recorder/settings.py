@@ -1,8 +1,15 @@
 """Where things are saved: settings, macros and learned data."""
 import json
+import os
+import sys
 from pathlib import Path
 
-APP_DIR = Path.home() / "Library" / "Application Support" / "MacroRecorder"
+if sys.platform == "darwin":
+    APP_DIR = Path.home() / "Library" / "Application Support" / "MacroRecorder"
+elif sys.platform == "win32":
+    APP_DIR = Path(os.environ.get("APPDATA", Path.home())) / "MacroRecorder"
+else:
+    APP_DIR = Path.home() / ".macro-recorder"
 MACRO_DIR = APP_DIR / "macros"
 LEARN_DIR = APP_DIR / "learn"
 CONFIG = APP_DIR / "config.json"

@@ -11,7 +11,7 @@ from tkinter import messagebox
 import customtkinter as ctk
 from pynput import keyboard, mouse
 
-from . import macos, matching, settings
+from . import matching, osapi, settings
 from .interface import Screen
 from .learn import LearnMode
 
@@ -88,13 +88,13 @@ class App(Screen, ctk.CTk):
         elif key == RUN and not self.recording:
             self.ui(self.toggle_play)
         elif self.capturing:
-            self.events.append({"type": "key", "pressed": True, "key": macos.key_to_data(key),
+            self.events.append({"type": "key", "pressed": True, "key": osapi.key_to_data(key),
                                 "t": round(time.time() - self.t0, 3)})
             self.ui(self.update_count)
 
     def on_release(self, key):
         if self.capturing and key not in (STOP_RECORD, STOP_PLAY, RUN):
-            self.events.append({"type": "key", "pressed": False, "key": macos.key_to_data(key),
+            self.events.append({"type": "key", "pressed": False, "key": osapi.key_to_data(key),
                                 "t": round(time.time() - self.t0, 3)})
 
     # ---------- recording ----------
@@ -139,7 +139,7 @@ class App(Screen, ctk.CTk):
     def _watch(self):
         """While recording, keep a few recent screenshots."""
         while self.capturing:
-            self.frames.append((time.time(), macos.grab_screen()))
+            self.frames.append((time.time(), osapi.grab_screen()))
             time.sleep(0.15)
 
     def grab_crop(self, x, y, when):
@@ -147,7 +147,7 @@ class App(Screen, ctk.CTk):
         try:
             frames = list(self.frames)
             old = [f for f in frames if f[0] <= when - 0.1]
-            shot = (old[-1] if old else frames[0] if frames else (0, macos.grab_screen()))[1]
+            shot = (old[-1] if old else frames[0] if frames else (0, osapi.grab_screen()))[1]
             s = shot.width / self.sw
             half = int(matching.CROP_POINTS * s / 2)
             cx, cy = int(x * s), int(y * s)
@@ -265,12 +265,12 @@ class App(Screen, ctk.CTk):
                             return
                         else:
                             self.ui(self.set_status, "Not found, using saved spot")
-                    macos.glide_to(*self.cur, fast="fd" in ev)
-                macos.mouse_button(ev["button"], ev["pressed"], *self.cur, n)
+                    osapi.glide_to(*self.cur, fast="fd" in ev)
+                osapi.mouse_button(ev["button"], ev["pressed"], *self.cur, n)
             elif ev["type"] == "scroll":
-                macos.scroll(ev["x"], ev["y"], ev["dx"], ev["dy"])
+                osapi.scroll(ev["x"], ev["y"], ev["dx"], ev["dy"])
             elif ev["type"] == "key":
-                macos.key_event(ev["key"], ev["pressed"])
+                osapi.key_event(ev["key"], ev["pressed"])
         except Exception as exc:
             print("Action failed:", exc)
 
@@ -280,7 +280,7 @@ class App(Screen, ctk.CTk):
         end, tries = time.time() + WAIT, 0
         while time.time() < end and not self.abort.is_set():
             try:
-                shot = macos.grab_screen()
+                shot = osapi.grab_screen()
                 hit = (near and matching.locate(ev, shot, self.sw, near)) or matching.locate(ev, shot, self.sw)
                 if hit:
                     return hit

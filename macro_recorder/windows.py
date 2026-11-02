@@ -1,0 +1,66 @@
+"""Everything that talks to Windows: screenshots, mouse and keyboard control, the front window.
+Uses only the standard library (ctypes) and pynput, so no extra install is needed on Windows."""
+import ctypes
+import time
+
+from PIL import ImageGrab
+from pynput import keyboard, mouse
+
+_mouse, _keys = mouse.Controller(), keyboard.Controller()
+_BUTTONS = {"left": mouse.Button.left, "right": mouse.Button.right, "middle": mouse.Button.middle}
+_user32 = ctypes.windll.user32 if hasattr(ctypes, "windll") else None
+
+
+def grab_screen():
+    """A screenshot of the main screen."""
+    return ImageGrab.grab().convert("RGB")
+
+
+def front_app():
+    """Title of the window in front, or an empty string."""
+    try:
+        hwnd = _user32.GetForegroundWindow()
+        length = _user32.GetWindowTextLengthW(hwnd)
+        buf = ctypes.create_unicode_buffer(length + 1)
+        _user32.GetWindowTextW(hwnd, buf, length + 1)
+        return buf.value
+    except Exception:
+        return ""
+
+
+def glide_to(x, y, fast=False):
+    """Move the pointer in small steps, so the app under it notices the move."""
+    sx, sy = _mouse.position
+    steps = 3 if fast else 6
+    for i in range(1, steps + 1):
+        _mouse.position = (sx + (x - sx) * i / steps, sy + (y - sy) * i / steps)
+        time.sleep(0.01)
+    _mouse.position = (x, y)
+    time.sleep(0.05 if fast else 0.1)
+
+
+def mouse_button(name, down, x, y, clicks=1):
+    _mouse.position = (x, y)
+    button = _BUTTONS.get(name, mouse.Button.left)
+    (_mouse.press if down else _mouse.release)(button)
+
+
+def scroll(x, y, dx, dy):
+    glide_to(x, y)
+    _mouse.scroll(dx, dy)
+
+
+def key_to_data(key):
+    if isinstance(key, keyboard.KeyCode):
+        return {"char": key.char} if key.char else {"vk": key.vk}
+    return {"name": key.name}
+
+
+def key_event(data, down):
+    if "char" in data:
+        key = data["char"]
+    elif "vk" in data:
+        key = keyboard.KeyCode.from_vk(data["vk"])
+    else:
+        key = getattr(keyboard.Key, data["name"])
+    (_keys.press if down else _keys.release)(key)
