@@ -1,5 +1,6 @@
 """The handheld game screen: pixel scene, green LCD, pills and round buttons."""
 import math
+import sys
 import tkinter as tk
 
 import customtkinter as ctk
@@ -16,8 +17,11 @@ CAT = [".o.....o.", "ooo...ooo", "ooooooooo", "oKooooKoo", "ooooPoooo",
 CAT_COLORS = {"o": "#F29A4A", "w": "#FFF3E0", "K": "#2F2323", "P": "#E86A8A"}
 
 
+_MONO_FAMILY = {"darwin": "Menlo", "win32": "Consolas"}.get(sys.platform, "DejaVu Sans Mono")
+
+
 def mono(size, bold=False):
-    return ("Menlo", size, "bold" if bold else "normal")
+    return (_MONO_FAMILY, size, "bold" if bold else "normal")
 
 
 def lerp(a, b, t):
