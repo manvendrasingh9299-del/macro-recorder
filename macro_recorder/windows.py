@@ -40,6 +40,12 @@ def glide_to(x, y, fast=False):
 
 
 def mouse_button(name, down, x, y, clicks=1):
+    # clicks (the recorded click count: 1 for a single click, 2 for a double-click) is
+    # unused here on purpose. Unlike macOS, Windows has no explicit "this is click #2"
+    # field on a synthetic click. It recognises a double-click by timing and position
+    # alone, from two separate press/release pairs at the same spot -- which is exactly
+    # what the replay engine already sends. See scripts/click_test.py to confirm this
+    # holds on your own PC.
     _mouse.position = (x, y)
     button = _BUTTONS.get(name, mouse.Button.left)
     (_mouse.press if down else _mouse.release)(button)
