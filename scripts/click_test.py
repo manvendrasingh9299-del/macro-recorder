@@ -1,19 +1,24 @@
-"""
-click_test.py - checks, on your own Windows PC, whether synthetic clicks actually work.
-Run it on its own, with no other setup needed beyond:  pip install pynput
+r"""
+click_test.py - checks, on your own Windows PC, whether Macro Recorder's OWN click code
+works -- not just pynput in general. It calls osapi.glide_to() and osapi.mouse_button(),
+the exact functions app.py uses to replay a macro, with the exact same arguments a real
+double-click replay would use (two separate clicks, click count 1 then 2).
 
-    python scripts\\click_test.py
+Run it from the project folder, with the environment already set up:
 
-It opens Notepad (or asks you to), then tries a single click, a double-click, and a
-right-click, each with a 3-second countdown so you can watch it happen. After each one
-it asks whether it worked. Send me the printed PASS/FAIL summary at the end.
+    python scripts\click_test.py
+
+It opens Notepad, gives a 3-second countdown before each action, then tries a single
+click, a double-click, and a right-click. After each one it asks whether it worked.
+Send me the printed PASS/FAIL block at the end.
 """
-import subprocess
+import os
+import sys
 import time
 
-from pynput import mouse
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-_mouse = mouse.Controller()
+from macro_recorder import osapi  # noqa: E402 - the real module app.py replays through
 
 
 def countdown(label, seconds=3):
@@ -28,34 +33,38 @@ def ask(question):
     return input(f"{question} (y/n): ").strip().lower().startswith("y")
 
 
-def click_at(x, y, button=mouse.Button.left, count=1):
-    _mouse.position = (x, y)
-    time.sleep(0.1)  # let the app under the pointer notice it moved
-    if count == 1:
-        _mouse.click(button)
-    else:
-        _mouse.click(button, count)
+def do_click(x, y, button="left", n=1, gap=0.0):
+    """One click event, exactly as app.py's _do() sends it during replay."""
+    if n == 1:
+        osapi.glide_to(x, y, fast=False)
+    osapi.mouse_button(button, True, x, y, n)
+    if gap:
+        time.sleep(gap)
+    osapi.mouse_button(button, False, x, y, n)
 
 
 def main():
     print(__doc__)
     input("Press Enter, then click into Notepad's text area within 3 seconds so it has focus...")
     countdown("Getting your pointer position")
-    x, y = _mouse.position
+
+    from pynput import mouse
+    x, y = mouse.Controller().position
     print(f"Will click at ({x}, {y}) -- wherever your pointer is right now.")
 
     results = {}
 
     countdown("Single left-click")
-    click_at(x, y)
+    do_click(x, y, "left", n=1)
     results["single click"] = ask("Did a single click happen there (cursor blinking, nothing selected)?")
 
-    countdown("Double-click (should select the nearest word)")
-    click_at(x, y, count=2)
+    countdown("Double-click (two real click events, 30ms apart, like a fast-replayed macro)")
+    do_click(x, y, "left", n=1, gap=0.03)
+    do_click(x, y, "left", n=2, gap=0.03)
     results["double-click"] = ask("Did it select a word, like a real double-click?")
 
     countdown("Right-click (should open a context menu)")
-    click_at(x, y, button=mouse.Button.right)
+    do_click(x, y, "right", n=1)
     results["right-click"] = ask("Did a right-click menu appear? (press Escape to close it, then answer)")
 
     print("\n--- RESULTS: copy this whole block and send it back ---")
@@ -65,6 +74,7 @@ def main():
 
 
 if __name__ == "__main__":
+    import subprocess
     try:
         subprocess.Popen(["notepad.exe"])
         time.sleep(1)
