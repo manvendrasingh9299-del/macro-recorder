@@ -251,7 +251,19 @@ class App(Screen, ctk.CTk):
                 n = ev.get("n", 1)
                 if ev["pressed"] and n == 1:
                     self.cur = (ev.get("fx", ev["x"]), ev.get("fy", ev["y"]))
-                    if self.brain != "exact" and ev.get("crop") and "ox" in ev:
+                    can_match = self.brain != "exact" and ev.get("crop") and "ox" in ev
+                    on_main_display = 0 <= self.cur[0] < self.sw and 0 <= self.cur[1] < self.sh
+                    if can_match and not on_main_display:
+                        # Smart replay only ever looks at the main display (true on both macOS
+                        # and Windows), so a point recorded on another monitor can never be
+                        # found there. Skip straight to the saved spot instead of waiting out
+                        # a guaranteed miss.
+                        if self.strict.get():
+                            self.fail = "Recorded on another display. Stopped"
+                            self.abort.set()
+                            return
+                        self.ui(self.set_status, "Recorded on another display, using saved spot")
+                    elif can_match:
                         self.ui(self.set_status, "Finding target")
                         hit = self.find_target(ev)
                         if hit:
