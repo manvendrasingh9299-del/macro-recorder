@@ -13,7 +13,8 @@ from . import osapi, settings
 from .matching import CROP_POINTS
 
 CAP_GB = 3.0
-SKIP_APPS = ("1password", "bitwarden", "keychain", "passwords", "lastpass", "dashlane", "python", "macro recorder")
+SKIP_APPS = ("1password", "bitwarden", "keychain", "keepass", "passwords", "lastpass",
+             "dashlane", "nordpass", "python", "macro recorder")
 
 
 class LearnMode:
