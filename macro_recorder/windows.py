@@ -1,7 +1,9 @@
 """Everything that talks to Windows: screenshots, mouse and keyboard control, the front window.
 Uses only the standard library (ctypes) and pynput, so no extra install is needed on Windows."""
 import ctypes
+import ntpath
 import time
+from ctypes import wintypes
 
 from PIL import ImageGrab
 from pynput import keyboard, mouse
@@ -17,15 +19,43 @@ def grab_screen():
 
 
 def front_app():
-    """Title of the window in front, or an empty string."""
+    """Title of the window in front, plus the real program behind it (such as
+    "bitwarden.exe"), so a skip-list like "bitwarden" still matches even when the
+    window's title alone does not mention the app -- for example a password manager
+    that only shows an entry's name, or one that runs inside a browser tab."""
     try:
         hwnd = _user32.GetForegroundWindow()
+    except Exception:
+        return ""
+
+    title = ""
+    try:
         length = _user32.GetWindowTextLengthW(hwnd)
         buf = ctypes.create_unicode_buffer(length + 1)
         _user32.GetWindowTextW(hwnd, buf, length + 1)
-        return buf.value
+        title = buf.value
     except Exception:
-        return ""
+        pass
+
+    exe_name = ""
+    try:
+        pid = wintypes.DWORD()
+        _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        process_query_limited_information = 0x1000
+        handle = ctypes.windll.kernel32.OpenProcess(process_query_limited_information, False, pid)
+        if handle:
+            try:
+                path_buf = ctypes.create_unicode_buffer(260)
+                size = wintypes.DWORD(260)
+                ok = ctypes.windll.kernel32.QueryFullProcessImageNameW(handle, 0, path_buf, ctypes.byref(size))
+                if ok:
+                    exe_name = ntpath.basename(path_buf.value)
+            finally:
+                ctypes.windll.kernel32.CloseHandle(handle)
+    except Exception:
+        pass
+
+    return f"{title} {exe_name}".strip()
 
 
 def glide_to(x, y, fast=False):
