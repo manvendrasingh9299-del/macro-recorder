@@ -186,11 +186,15 @@ class App(Screen, ctk.CTk):
     def toggle_play(self):
         self.abort.set() if self.playing else self.start_play()
 
-    def start_play(self):
+        def start_play(self):
         if self.recording or self.playing:
             return
         if not self.events:
             self.set_status("Record or load a macro first")
+            return
+        if osapi.target_needs_admin():
+            self.set_status("The app in front is running as administrator. "
+                            "Run Macro Recorder as administrator too, then try again.")
             return
         self.brain = self.smart_brain if self.smart.get() else "exact"
         if self.brain == "plugin":
@@ -207,6 +211,7 @@ class App(Screen, ctk.CTk):
         self.after(800, self.iconify)
         threading.Thread(target=self._play, args=(self.repeat_n, self.speed_v), daemon=True).start()
 
+    
     def _sleep(self, seconds):
         end = time.time() + seconds
         while time.time() < end:
