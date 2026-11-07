@@ -113,7 +113,6 @@ macro-recorder/
 - Learn from my day has had light testing.
 - Macros recorded with very early versions may click saved positions instead of finding buttons. Record them again.
 
-<details>
 <summary><b>Troubleshooting</b></summary>
 
 | You see | Fix |
@@ -124,9 +123,7 @@ macro-recorder/
 | `No module named '_tkinter'` | Run `brew install python-tk@3.12` and rebuild your `.venv` |
 | F8, F9 or F10 do nothing | Hold **Fn**, or turn on standard function keys in Keyboard settings |
 
-</details>
 
-<details>
 <summary><b>Build the app (experimental)</b></summary>
 
 ```bash
@@ -135,4 +132,3 @@ macro-recorder/
 
 The app appears in `dist/`. Give `Macro Recorder.app` the three permissions above.
 
-</details>
