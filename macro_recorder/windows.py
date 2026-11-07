@@ -17,6 +17,45 @@ def grab_screen():
     """A screenshot of the main screen."""
     return ImageGrab.grab().convert("RGB")
 
+def _process_is_elevated(pid):
+    """True if the process with this id is running as administrator."""
+    kernel32, advapi32 = ctypes.windll.kernel32, ctypes.windll.advapi32
+    process_query_limited_information = 0x1000
+    token_query = 0x0008
+    token_elevation = 20  # TokenElevation, a documented TOKEN_INFORMATION_CLASS value
+
+    handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+    if not handle:
+        return False
+    try:
+        token = wintypes.HANDLE()
+        if not advapi32.OpenProcessToken(handle, token_query, ctypes.byref(token)):
+            return False
+        try:
+            elevated, size = wintypes.DWORD(), wintypes.DWORD()
+            ok = advapi32.GetTokenInformation(
+                token, token_elevation, ctypes.byref(elevated), ctypes.sizeof(elevated), ctypes.byref(size))
+            return bool(ok and elevated.value)
+        finally:
+            kernel32.CloseHandle(token)
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def target_needs_admin():
+    """True if the window in front is running as administrator while this script is
+    not -- Windows then silently blocks every click and key sent to it (no error, it
+    just does nothing), so this lets the app warn clearly instead."""
+    try:
+        if ctypes.windll.shell32.IsUserAnAdmin():
+            return False  # we are elevated too, so nothing is blocked
+        hwnd = _user32.GetForegroundWindow()
+        pid = wintypes.DWORD()
+        _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        return _process_is_elevated(pid.value)
+    except Exception:
+        return False
+
 
 def front_app():
     """Title of the window in front, plus the real program behind it (such as
