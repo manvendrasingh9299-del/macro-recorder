@@ -19,10 +19,12 @@ _BUTTONS = {"left": (kCGEventLeftMouseDown, kCGEventLeftMouseUp, kCGMouseButtonL
             "right": (kCGEventRightMouseDown, kCGEventRightMouseUp, kCGMouseButtonRight),
             "middle": (kCGEventOtherMouseDown, kCGEventOtherMouseUp, kCGMouseButtonCenter)}
 
+
 def target_needs_admin():
     """macOS has no equivalent to Windows UAC elevation blocking synthetic input, so
     this always says no problem here. (Exists so app.py can call it on either OS.)"""
     return False
+
 
 def grab_screen():
     """A fast screenshot of the main screen (about 40 ms)."""
