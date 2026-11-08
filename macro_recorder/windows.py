@@ -17,6 +17,7 @@ def grab_screen():
     """A screenshot of the main screen."""
     return ImageGrab.grab().convert("RGB")
 
+
 def _process_is_elevated(pid):
     """True if the process with this id is running as administrator."""
     kernel32, advapi32 = ctypes.windll.kernel32, ctypes.windll.advapi32

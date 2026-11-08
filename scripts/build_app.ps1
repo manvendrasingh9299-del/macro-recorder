@@ -1,5 +1,6 @@
 # Builds "Macro Recorder.exe" into dist\. Run it from the project folder:
 #   .\scripts\build_app.ps1
+# Experimental: written and syntax-checked, but not yet run on a real Windows PC.
 $ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..")
 
