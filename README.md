@@ -196,6 +196,45 @@ If you can run Windows, these scripts help confirm everything actually works —
 | `python scripts\monitor_test.py` | Only needed if you have two or more monitors |
 
 <details>
+
+## Add it to your Desktop or Start Menu
+
+### Quickest: a double-clickable launcher
+
+**macOS** — paste this in Terminal once:
+
+```bash
+cat > ~/Desktop/"Macro Recorder.command" << 'EOF'
+#!/bin/bash
+cd ~/Downloads/macro-recorder
+source .venv/bin/activate
+python -m macro_recorder
+EOF
+chmod +x ~/Desktop/"Macro Recorder.command"
+```
+
+Then double-click **Macro Recorder.command** on your Desktop any time. A Terminal window
+briefly appears — that's normal for this approach — then the app opens.
+
+**Windows** — open Notepad, paste this, then save as `Macro Recorder.bat` directly on
+your Desktop (choose "All Files" as the file type, not `.txt`):
+
+```bat
+@echo off
+cd /d "%USERPROFILE%\Downloads\macro-recorder"
+call .venv\Scripts\activate.bat
+python -m macro_recorder
+```
+
+### Nicer: a real app with no console window
+
+Build it with the scripts in `scripts/` (see **Build the app** below), then:
+
+- **macOS**: drag `dist/Macro Recorder.app` into **Applications**, then right-click its
+  Dock icon → Options → **Keep in Dock**.
+- **Windows**: right-click `dist\Macro Recorder.exe` → **Send to → Desktop (create
+  shortcut)**, or drag it onto the Start Menu.
+  
 <summary><b>Troubleshooting</b></summary>
 
 | You see | Fix |
