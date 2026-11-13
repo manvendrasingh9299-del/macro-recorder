@@ -184,18 +184,6 @@ macro-recorder/
 - Learn from my day has had light testing.
 - Macros recorded with very early versions may click saved positions instead of finding buttons. Record them again.
 
-## Testing on Windows
-
-If you can run Windows, these scripts help confirm everything actually works — each takes under a minute, and results are welcome as feedback:
-
-| Script | Checks |
-|---|---|
-| `python scripts\self_test.py` | Screenshots, clicks, double-clicks, right-clicks, and keys all work. Fully automatic, no judgement needed |
-| `python scripts\click_test.py` | The same, with a visual yes/no check in Notepad |
-| `python scripts\scale_test.py` | Click accuracy isn't thrown off by display scaling (125%, 150%) |
-| `python scripts\monitor_test.py` | Only needed if you have two or more monitors |
-
-<details>
 
 ## Add it to your Desktop or Start Menu
 
