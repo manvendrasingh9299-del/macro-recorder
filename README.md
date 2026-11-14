@@ -186,21 +186,7 @@ macro-recorder/
 
 
   
-<summary><b>Troubleshooting</b></summary>
 
-| You see | Fix |
-|---|---|
-| `This process is not trusted` (Mac) | Turn on Accessibility and Input Monitoring for your terminal, then quit and reopen it |
-| `could not create image from display` (Mac) | Turn on Screen & System Audio Recording, then quit and reopen your terminal |
-| The cursor moves but nothing clicks | Check the permissions again (Mac), or check the target app isn't running as administrator while your terminal isn't (Windows) |
-| `No module named '_tkinter'` (Mac) | Run `brew install python-tk@3.12` and rebuild your `.venv` |
-| `running scripts is disabled on this system` (Windows) | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then activate again |
-| `python` is not recognized (Windows) | Python wasn't added to PATH during install — reinstall and tick that box |
-| F8, F9 or F10 do nothing (Mac) | Hold **Fn**, or turn on standard function keys in Keyboard settings |
-
-</details>
-
-<details>
 <summary><b>Build the app (experimental)</b></summary>
 
 macOS:
