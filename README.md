@@ -147,24 +147,6 @@ If a button is not found within 5 seconds, the macro clicks its saved position. 
   - `my_model.py` your optional model
   - `learn/` data from Learn from my day, if enabled
 
-## Testing on Windows
-
-Run these from the project folder with your virtual environment active.
-
-```powershell
-python scripts\self_test.py
-```
-
-`self_test.py` is the one to start with. It checks that screenshots, clicks and keystrokes all work. The others cover specific cases:
-
-| Script | Checks |
-|---|---|
-| `scripts\click_test.py` | Double-clicks and right-clicks |
-| `scripts\scale_test.py` | That display scaling doesn't throw off click accuracy |
-| `scripts\monitor_test.py` | Setups with two or more monitors |
-
-If something fails, please open an issue with the script output.
-
 ## Troubleshooting
 
 | You see | Fix |
