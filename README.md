@@ -147,6 +147,20 @@ If a button is not found within 5 seconds, the macro clicks its saved position. 
   - `my_model.py` your optional model
   - `learn/` data from Learn from my day, if enabled
 
+## Testing on Windows
+
+If you can run Windows, these scripts help confirm everything actually works — each takes under a minute, and results are welcome as feedback:
+
+| Script | Checks |
+|---|---|
+| `python scripts\self_test.py` | Screenshots, clicks, double-clicks, right-clicks, and keys all work. Fully automatic, no judgement needed |
+| `python scripts\click_test.py` | The same, with a visual yes/no check in Notepad |
+| `python scripts\scale_test.py` | Click accuracy isn't thrown off by display scaling (125%, 150%) |
+| `python scripts\monitor_test.py` | Only needed if you have two or more monitors |
+
+<details>
+<summary><b>Troubleshooting</b></summary>
+
 ## Troubleshooting
 
 | You see | Fix |
