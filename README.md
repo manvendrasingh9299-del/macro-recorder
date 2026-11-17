@@ -2,9 +2,7 @@
 
 **Record a task once. Replay it any time, even after a window moves.**
 
-Macro Recorder records your mouse clicks and keystrokes and replays them with one click. Most macro tools click fixed screen positions, so they break when a window moves. This one finds each button by looking at the screen. Works on macOS and Windows.
-
-**100% local. No account, no API key, no internet connection needed, ever.**
+Most macro tools click fixed screen positions, so they break the moment a window shifts. Macro Recorder remembers what each button *looks like* and finds it on screen at replay time. It runs on macOS and Windows, and it is **100% local**: no account, no API key, no internet connection, ever.
 
 <p align="center">
   <img src="docs/images/main.jpg" alt="Main window" width="300">
@@ -13,27 +11,45 @@ Macro Recorder records your mouse clicks and keystrokes and replays them with on
 </p>
 <p align="center"><sub>The main window and your saved macros</sub></p>
 
+## Contents
+
+- [How it works](#how-it-works)
+- [Features](#features)
+- [Install](#install) ([macOS](#macos) · [Windows](#windows))
+- [Usage](#usage)
+- [Smart replay options](#smart-replay-options)
+- [Privacy](#privacy)
+- [Testing on Windows](#testing-on-windows)
+- [Troubleshooting](#troubleshooting)
+- [Build a standalone app](#build-a-standalone-app-experimental)
+- [Project structure](#project-structure)
+- [Known limits](#known-limits)
+
 ## How it works
 
 1. **Record.** For every click, it saves the click position and a small picture of what you clicked.
-2. **Replay.** For every click, it looks for that picture on the current screen (image matching with OpenCV) and clicks where it finds it.
-3. **Back up.** If matching fails, your own model can try (optional). Otherwise it clicks the saved position.
+2. **Replay.** For every click, it searches the current screen for that picture (image matching with OpenCV) and clicks wherever it finds it.
+3. **Fall back.** If image matching fails, your own offline model gets a try (optional). If that fails too, or none is set up, it clicks the saved position.
 
-Everything runs on your computer. No account and no internet are needed for the default mode.
+Everything runs on your computer in the default mode.
 
 ## Features
 
-- Records clicks (single, double, right), scrolling and keys
-- Repeat from 1 to 100 times, at 0.5x to 3x speed
-- **Smart replay** finds buttons on screen, so moved windows are fine
-- **Fast replay.** After a run, answer "Was it right?". Yes saves a faster version of the macro
+- Records single, double and right clicks, scrolling, and keystrokes
+- Repeats 1 to 100 times at 0.5x to 3x speed
+- **Smart replay** finds buttons by appearance, so moved windows are fine
+- **Fast replay:** after a run, answer "Was it right?". Yes saves a faster version of the macro
 - Save, open and delete macros
-- Optional backup for Smart replay: your own offline model
-- Optional **Learn from my day**: saves screenshots and click positions on your computer, so you can train your own model later (off by default)
+- Optional: plug in your own offline model as a backup for Smart replay
+- Optional: **Learn from my day** saves screenshots and click positions locally so you can train your own model later (off by default)
 
-## Quick start (macOS)
+## Install
 
-You need macOS and Python 3.12 or newer with Tk.
+You need Python 3.12 or newer.
+
+### macOS
+
+Python must include Tk.
 
 ```bash
 git clone https://github.com/manvendrasingh9299-del/macro-recorder.git
@@ -44,94 +60,71 @@ pip install -r requirements.txt
 python -m macro_recorder
 ```
 
-### Allow the permissions
+**Allow the permissions.** Open **System Settings → Privacy & Security** and turn these on for the app you launch from (Terminal or VS Code):
 
-Open **System Settings > Privacy & Security** and turn these on for the app you start from (Terminal or VS Code):
-
-- **Accessibility** (called **Device Control and Data Access** on some versions)
+- **Accessibility** (called *Device Control and Data Access* on some versions)
 - **Input Monitoring**
 - **Screen & System Audio Recording**
 
-Then quit that app completely (Cmd+Q) and open it again.
+Then quit that app completely (Cmd+Q) and reopen it.
 
-## Quick start (Windows)
+### Windows
 
-### 1. Install Python
-
-Download Python 3.12 or newer from **python.org** — not the Microsoft Store version, which can cause path issues. On the first install screen, **tick "Add python.exe to PATH"** before clicking Install. This is the step people miss most often.
-
-Confirm it worked:
+**1. Install Python.** Download it from [python.org](https://www.python.org/downloads/), not the Microsoft Store, which can cause path issues. On the first installer screen, tick **Add python.exe to PATH** before clicking Install. This is the step people miss most often. Check it worked:
 
 ```powershell
 python --version
 ```
 
-If PowerShell says `python` is not recognized, reinstall and tick that box, or add it manually via Windows search → "Edit the system environment variables".
+If PowerShell says `python` is not recognized, reinstall and tick that box, or add Python to PATH manually (Windows search → "Edit the system environment variables").
 
-### 2. Get the project
-
-With Git (check with `git --version`):
+**2. Get the project.** With Git:
 
 ```powershell
 git clone https://github.com/manvendrasingh9299-del/macro-recorder.git
 cd macro-recorder
 ```
 
-Without Git: click **Code → Download ZIP** on GitHub, unzip it, then open PowerShell inside the folder (Shift + right-click inside it → "Open PowerShell window here").
+Without Git: click **Code → Download ZIP** on GitHub, unzip it, then Shift + right-click inside the folder and choose "Open PowerShell window here".
 
-### 3. Set up and install
+**3. Set up and run.**
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+python -m macro_recorder
 ```
 
-If PowerShell blocks the activate script with "running scripts is disabled on this system," run this once, then try again:
+If PowerShell says "running scripts is disabled on this system," run this once and activate again:
 
 ```powershell
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
-### 4. Run it
+No permission dialogs are needed on Windows.
 
-```powershell
-python -m macro_recorder
-```
+> **Run as administrator? Match both sides.** If the app you are recording or replaying in runs as administrator, Windows silently blocks input from a script that does not. The click just does nothing. Either don't run the target app as administrator, or run your terminal as administrator too. The app checks for this before each replay and tells you if it is the problem.
 
-No permission dialogs are needed on Windows, unlike macOS.
+> **Windows status:** Windows support has been tested with stand-ins for real hardware, but not yet on an actual Windows PC. Run the [self-test](#testing-on-windows) before trusting it with anything important.
 
-### 5. The one Windows-specific thing to know
-
-If the app you're recording or replaying in is running **as administrator**, Windows silently blocks input sent from a script that isn't also running as administrator — no error, the click just does nothing. Either don't run the target app as administrator, or run your terminal as administrator too, so both sides match. The app also detects this automatically before a replay starts and tells you directly if this is the problem.
-
-### 6. Confirm it actually works
-
-Windows support has been written and tested with stand-ins for real hardware, but not yet run on an actual Windows PC. Before trusting it with anything real, run:
-
-```powershell
-python scripts\self_test.py
-```
-
-See [Testing on Windows](#testing-on-windows) below for what this checks and the other diagnostic scripts available.
-
-## Use it
+## Usage
 
 1. Press **REC**, wait 3 seconds, do your task, then press **F8**.
 2. Press **RUN** (or **F10**) and keep your hands off the mouse.
 3. When it finishes, answer **Was it right?**. Yes makes later runs faster.
 4. Tap the macro name to save it. **Macros** opens your saved ones.
 
-Tap **REPEAT** and **SPEED** on the screen to change them. Turn **Smart replay** off to replay exact positions instead.
+Tap **REPEAT** and **SPEED** on screen to change them. Turn **Smart replay** off to replay exact positions instead.
 
 | Key | Action |
 |---|---|
+| F7 | Pause or resume Learn from my day |
 | F8 | Stop recording |
 | F9 | Stop playback |
 | F10 | Run the loaded macro |
-| F7 | Pause or resume Learn from my day |
 
-On a MacBook, hold **Fn** with these keys unless you turned on standard function keys. On Windows, the keys work directly with no Fn needed.
+On a MacBook, hold **Fn** with these keys unless you turned on standard function keys. On Windows, no Fn is needed.
 
 ## Smart replay options
 
@@ -142,47 +135,17 @@ Tap the brain button to switch.
 | **Local** | Default. Image matching on your computer. Fully offline, no account needed |
 | **My model** | Your own offline model. Put a `find(crop, screen, hint)` function in `my_model.py` |
 
-Both options run entirely on your computer. Nothing is ever sent anywhere. If a button is not found within 5 seconds, the macro clicks its saved position. Turn on **Stop if target not found** in Settings to stop instead.
+If a button is not found within 5 seconds, the macro clicks its saved position. Turn on **Stop if target not found** in Settings to stop instead.
 
 ## Privacy
 
-- **Fully offline.** No account, no API key, no network calls. Everything runs and stays on your computer.
-- A macro records everything you type, **including passwords**. Do not record passwords.
-- Your data is in `~/Library/Application Support/MacroRecorder/` on macOS, or `%APPDATA%\MacroRecorder` on Windows: `macros/`, `config.json` (settings), `my_model.py`, and `learn/`.
-
-## Project structure
-
-```
-macro-recorder/
-├── macro_recorder/
-│   ├── __main__.py     Start here: python -m macro_recorder
-│   ├── app.py          The window: recording, replaying, saving
-│   ├── interface.py    The screen: pixel scene, green display, buttons
-│   ├── matching.py     Finding a button on screen (image matching, optional models)
-│   ├── osapi.py        Picks macos.py or windows.py automatically
-│   ├── macos.py        macOS only: screenshots, mouse and keyboard control
-│   ├── windows.py       Windows only: the same, for Windows
-│   ├── learn.py        Optional Learn from my day
-│   └── settings.py     Folders, saved settings and macros
-├── scripts/
-│   ├── build_app.sh     Builds the macOS .app (experimental)
-│   ├── build_app.ps1     Builds the Windows .exe (experimental)
-│   ├── launch.py        Entry point for both builds
-│   ├── self_test.py     One command: checks screenshots, clicks and keys all work
-│   ├── click_test.py    Checks double-clicks and right-clicks specifically
-│   ├── scale_test.py    Checks screen scaling doesn't throw off click accuracy
-│   └── monitor_test.py  For anyone with two or more monitors
-├── docs/images/         Screenshots used in this README
-└── requirements.txt
-```
-
-## Limits
-
-- Built and tested on an Apple Silicon Mac. Windows support has been added and tested with stand-ins for real hardware, but not yet confirmed on an actual Windows PC — see Testing on Windows below.
-- Smart replay only looks at your main display, on both macOS and Windows. A macro still clicks the right spot on another monitor, it just can't re-find a moved button there.
-- No dragging, and no Cmd/Ctrl or Shift clicks yet.
-- Learn from my day has had light testing.
-- Macros recorded with very early versions may click saved positions instead of finding buttons. Record them again.
+- **Fully offline.** No account, no API key, no network calls. Everything stays on your computer.
+- **A macro records everything you type, including passwords.** Do not record passwords.
+- Your data lives in `~/Library/Application Support/MacroRecorder/` (macOS) or `%APPDATA%\MacroRecorder` (Windows):
+  - `macros/` saved macros
+  - `config.json` settings
+  - `my_model.py` your optional model
+  - `learn/` data from Learn from my day, if enabled
 
 ## Testing on Windows
 
@@ -198,31 +161,60 @@ If you can run Windows, these scripts help confirm everything actually works —
 <details>
 <summary><b>Troubleshooting</b></summary>
 
+## Troubleshooting
+
 | You see | Fix |
 |---|---|
 | `This process is not trusted` (Mac) | Turn on Accessibility and Input Monitoring for your terminal, then quit and reopen it |
 | `could not create image from display` (Mac) | Turn on Screen & System Audio Recording, then quit and reopen your terminal |
-| The cursor moves but nothing clicks | Check the permissions again (Mac), or check the target app isn't running as administrator while your terminal isn't (Windows) |
 | `No module named '_tkinter'` (Mac) | Run `brew install python-tk@3.12` and rebuild your `.venv` |
-| `running scripts is disabled on this system` (Windows) | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then activate again |
-| `python` is not recognized (Windows) | Python wasn't added to PATH during install — reinstall and tick that box |
 | F8, F9 or F10 do nothing (Mac) | Hold **Fn**, or turn on standard function keys in Keyboard settings |
+| The cursor moves but nothing clicks | Mac: recheck the permissions. Windows: make sure the target app isn't running as administrator while your terminal isn't |
+| `running scripts is disabled on this system` (Windows) | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, then activate again |
+| `python` is not recognized (Windows) | Python wasn't added to PATH. Reinstall and tick that box |
 
-</details>
+## Build a standalone app (experimental)
 
-<details>
-<summary><b>Build the app (experimental)</b></summary>
-
-macOS:
 ```bash
-./scripts/build_app.sh
+./scripts/build_app.sh        # macOS
 ```
 
-Windows:
 ```powershell
-.\scripts\build_app.ps1
+.\scripts\build_app.ps1       # Windows
 ```
 
-The app appears in `dist/`. On macOS, give `Macro Recorder.app` the three permissions above. On Windows, Defender/SmartScreen may warn since the file isn't signed — this is expected for an unsigned .exe, not a bug.
+The result appears in `dist/`. On macOS, give `Macro Recorder.app` the three permissions above. On Windows, Defender or SmartScreen may warn because the `.exe` is unsigned. That is expected, not a bug.
 
-</details>
+## Project structure
+
+```
+macro-recorder/
+├── macro_recorder/
+│   ├── __main__.py      Entry point: python -m macro_recorder
+│   ├── app.py           The window: recording, replaying, saving
+│   ├── interface.py     The screen: pixel scene, green display, buttons
+│   ├── matching.py      Finding a button on screen (image matching, optional models)
+│   ├── osapi.py         Picks macos.py or windows.py automatically
+│   ├── macos.py         macOS only: screenshots, mouse and keyboard control
+│   ├── windows.py       Windows only: the same, for Windows
+│   ├── learn.py         Optional Learn from my day
+│   └── settings.py      Folders, saved settings and macros
+├── scripts/
+│   ├── build_app.sh     Builds the macOS .app (experimental)
+│   ├── build_app.ps1    Builds the Windows .exe (experimental)
+│   ├── launch.py        Entry point for both builds
+│   ├── self_test.py     Checks screenshots, clicks and keys
+│   ├── click_test.py    Checks double-clicks and right-clicks
+│   ├── scale_test.py    Checks screen scaling vs. click accuracy
+│   └── monitor_test.py  For multi-monitor setups
+├── docs/images/         Screenshots used in this README
+└── requirements.txt
+```
+
+## Known limits
+
+- Built and tested on an Apple Silicon Mac. Windows support is not yet confirmed on a real Windows PC.
+- Smart replay only looks at your main display. On other monitors a macro still clicks the right saved spot, but can't re-find a moved button.
+- No dragging yet, and no Cmd/Ctrl or Shift clicks.
+- Learn from my day has had only light testing.
+- Macros recorded with very early versions may click saved positions instead of finding buttons. Record them again.
