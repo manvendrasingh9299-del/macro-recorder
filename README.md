@@ -21,7 +21,6 @@ Most macro tools click fixed screen positions, so they break the moment a window
 - [Privacy](#privacy)
 - [Testing on Windows](#testing-on-windows)
 - [Troubleshooting](#troubleshooting)
-- [Build a standalone app](#build-a-standalone-app-experimental)
 - [Project structure](#project-structure)
 - [Known limits](#known-limits)
 
